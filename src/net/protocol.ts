@@ -1,6 +1,7 @@
 import { AirDropPerk, GameEvent, Input, MatchConfig, PickupKind, PlaneType, PlayerSlot, World } from '../sim/types';
 
-export const PROTOCOL_VERSION = 2;
+// v3: stealth/gunship planes, mountain/forest/city maps.
+export const PROTOCOL_VERSION = 3;
 export const DISCOVERY_PORT = 47777;
 export const GAME_PORT = 47778;
 export const MAX_PLAYERS = 8;

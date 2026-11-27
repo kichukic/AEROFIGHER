@@ -47,6 +47,8 @@ export const BOOST_MULT = 1.35;
 export const DASH_TIME = 1.2;
 export const DASH_MULT = 1.75;
 export const FLARE_TIME = 1.5;
+export const OVERDRIVE_TIME = 4;
+export const OVERDRIVE_FIRE_MULT = 0.55; // gunship OVERDRIVE: ~1.8x fire rate
 export const FLAK_COUNT = 18;
 export const FLAK_SPEED = 470;
 export const FLAK_DAMAGE = 12;
@@ -201,6 +203,7 @@ function spawnPlane(w: World, p: Plane): void {
   p.boostUntil = 0;
   p.dashUntil = 0;
   p.flareUntil = 0;
+  p.overdriveUntil = 0;
   p.outOfBoundsTime = 0;
   p.spawnProtectUntil = w.time + SPAWN_PROTECTION;
 }
@@ -284,7 +287,7 @@ export function speedMult(w: World, p: Plane): number {
   let m = 1;
   if (w.time < p.boostUntil) m *= BOOST_MULT;
   if (w.time < p.dashUntil) m *= DASH_MULT;
-  if (p.perk?.kind === 'overdrive' && w.time < p.perk.until) m *= 1.35;
+  if ((p.perk?.kind === 'overdrive' && w.time < p.perk.until) || w.time < (p.overdriveUntil ?? 0)) m *= 1.35;
   if (w.flags.some((f) => f.carrier === p.id)) m *= CARRIER_SPEED_MULT;
   return m;
 }
@@ -395,7 +398,8 @@ function activateSpecial(w: World, p: Plane): void {
       for (const m of w.missiles) if (m.target === p.id) m.target = null;
       break;
     case 'overdrive':
-      p.perk = { kind: 'overdrive', until: w.time + 4.0 };
+      // Separate timer so an active air-drop perk is not thrown away.
+      p.overdriveUntil = w.time + OVERDRIVE_TIME;
       p.boostUntil = w.time + 2.5;
       break;
   }
@@ -443,7 +447,8 @@ function stepPlane(w: World, p: Plane, input: Input, dt: number): void {
   p.fireCd -= dt;
   if (input.fire && p.fireCd <= 0) {
     const isTwin = p.perk?.kind === 'twin_vulcan' && w.time < p.perk.until;
-    p.fireCd = isTwin ? stats.fireInterval * 0.65 : stats.fireInterval;
+    const overdrive = w.time < (p.overdriveUntil ?? 0) || (p.perk?.kind === 'overdrive' && w.time < p.perk.until);
+    p.fireCd = stats.fireInterval * (isTwin ? 0.65 : 1) * (overdrive ? OVERDRIVE_FIRE_MULT : 1);
     const nose = stats.radius + 4;
     const spread = (rnd(w) - 0.5) * 0.04;
     const a = p.angle + spread;

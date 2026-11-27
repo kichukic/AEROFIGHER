@@ -1301,7 +1301,7 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
         canvas.drawCircle(pose.x, pose.y, st.radius + 10, c.p.shield);
       }
     }
-    if (p.perk?.kind === 'overdrive' && w.time < p.perk.until) {
+    if ((p.perk?.kind === 'overdrive' && w.time < p.perk.until) || w.time < (p.overdriveUntil ?? 0)) {
       const odPulse = 1 + Math.sin(time * 25) * 0.12;
       const odPaint = fillFor('#10b981');
       odPaint.setAlphaf(0.32);

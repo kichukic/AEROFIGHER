@@ -69,13 +69,19 @@ describe('special abilities', () => {
     expect(w.events.some((e) => e.t === 'special' && e.kind === 'cloak')).toBe(true);
   });
 
-  test('gunship overdrive activates speed surge and overdrive perk', () => {
+  test('gunship overdrive boosts speed and fire rate without eating an air-drop perk', () => {
     const w = createWorld(configFor('ffa', 'ocean'), two('gunship', 'fighter'));
     park(w);
+    w.planes[0].perk = { kind: 'cluster_missile', until: w.time + 20 };
     step(w, { a: go({ special: true }) });
-    expect(w.planes[0].perk?.kind).toBe('overdrive');
-    expect(w.planes[0].boostUntil).toBeGreaterThan(w.time);
+    const g = w.planes[0];
+    expect(g.overdriveUntil).toBeGreaterThan(w.time);
+    expect(g.boostUntil).toBeGreaterThan(w.time);
+    expect(g.perk?.kind).toBe('cluster_missile');
     expect(w.events.some((e) => e.t === 'special' && e.kind === 'overdrive')).toBe(true);
+    g.fireCd = 0;
+    step(w, { a: go({ fire: true }) });
+    expect(g.fireCd).toBeLessThan(PLANES.gunship.fireInterval * 0.6);
   });
 });
 
