@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { BotDifficulty, GameMode, MapId } from '../sim/types';
-import { go, setPlaneType, startSolo, useApp } from '../store/app';
+import { go, setOrientation, setPlaneType, startSolo, useApp } from '../store/app';
 import { LimitPicker, MapPicker, MODE_OPTIONS, PlanePicker, TIME_OPTIONS } from './common';
-import { Button, Panel, Segmented, styles, Title } from './ui';
+import { Button, Panel, Segmented, styles, theme, Title } from './ui';
 
 const DIFFICULTY_OPTIONS: { value: BotDifficulty; label: string }[] = [
   { value: 'easy', label: 'ROOKIE' },
@@ -13,6 +13,7 @@ const DIFFICULTY_OPTIONS: { value: BotDifficulty; label: string }[] = [
 
 export function SoloScreen() {
   const planeType = useApp((s) => s.planeType);
+  const orientation = useApp((s) => s.orientation);
   const [mode, setMode] = useState<GameMode>('ffa');
   const [bots, setBots] = useState(3);
   const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
@@ -26,6 +27,15 @@ export function SoloScreen() {
       <View>
         <Title>SOLO DOGFIGHT</Title>
         <Panel>
+          <Segmented
+            label="Display orientation"
+            value={orientation}
+            onChange={(o) => setOrientation(o as 'portrait' | 'landscape')}
+            options={[
+              { value: 'portrait', label: '📱 PORTRAIT' },
+              { value: 'landscape', label: '🔄 LANDSCAPE', color: theme.cyan },
+            ]}
+          />
           <Segmented label="Mode" value={mode} onChange={setMode} options={MODE_OPTIONS} />
           <Segmented label="Difficulty" value={difficulty} onChange={setDifficulty} options={DIFFICULTY_OPTIONS} />
           <Segmented label="Bots" value={bots} onChange={setBots} options={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: String(n) }))} />

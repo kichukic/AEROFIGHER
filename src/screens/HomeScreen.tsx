@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { go, hostGame, setName, toggleOrientation, toggleSound, toggleVibration, useApp } from '../store/app';
-import { ActionCard, ErrorBanner, styles, theme } from './ui';
+import { go, hostGame, setName, setOrientation, toggleOrientation, toggleSound, toggleVibration, useApp } from '../store/app';
+import { ActionCard, ErrorBanner, Segmented, styles, theme } from './ui';
 
 const COOL_CALLSIGNS = [
   'VIPER', 'MAVERICK', 'GHOST', 'PHANTOM', 'RAPTOR', 'COBRA',
@@ -107,6 +107,24 @@ export function HomeScreen() {
             autoCapitalize="characters"
           />
         </View>
+      </View>
+
+      {/* Screen Orientation Settings Menu */}
+      <View style={localStyles.settingsCard}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <Text style={styles.label}>SCREEN ORIENTATION</Text>
+          <Text style={[styles.dim, { fontSize: 11 }]}>
+            {orientation === 'landscape' ? 'HORIZONTAL COCKPIT' : 'VERTICAL DUAL-THUMB'}
+          </Text>
+        </View>
+        <Segmented
+          value={orientation}
+          onChange={(o) => setOrientation(o as 'portrait' | 'landscape')}
+          options={[
+            { value: 'portrait', label: '📱 PORTRAIT' },
+            { value: 'landscape', label: '🔄 LANDSCAPE', color: theme.cyan },
+          ]}
+        />
       </View>
 
       {/* Main Mission Cards */}
@@ -266,6 +284,13 @@ const localStyles = StyleSheet.create({
     marginTop: 4,
   },
   callsignCard: {
+    backgroundColor: theme.panel,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.panelBorder,
+  },
+  settingsCard: {
     backgroundColor: theme.panel,
     borderRadius: 14,
     padding: 14,

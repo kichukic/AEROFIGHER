@@ -61,8 +61,12 @@ export const setOrientation = async (orientation: 'portrait' | 'landscape') => {
   set({ orientation });
   try {
     if (orientation === 'landscape') {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      // LANDSCAPE_RIGHT (value 7) maps to ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE on Android,
+      // which forces immediate rotation to landscape even if device auto-rotate is off or held upright.
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
     } else {
+      // PORTRAIT_UP (value 3) maps to ActivityInfo.SCREEN_ORIENTATION_PORTRAIT on Android,
+      // which forces immediate rotation to portrait.
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     }
   } catch (err) {

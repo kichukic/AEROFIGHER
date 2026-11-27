@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Canvas, createPicture, Picture, SkPicture } from '@shopify/react-native-skia';
 import { useKeepAwake } from 'expo-keep-awake';
-import { finishMatch, leaveToHome, toggleOrientation, useApp } from '../store/app';
+import { finishMatch, leaveToHome, setOrientation, toggleOrientation, useApp } from '../store/app';
 import { GameEvent, IDLE_INPUT, Input } from '../sim/types';
 import { SPECIALS } from '../sim/planes';
 import { Controls } from './Controls';
@@ -231,14 +231,33 @@ export function GameScreen() {
                 <Text style={styles.dialogBtnText}>LEAVE</Text>
               </Pressable>
             </View>
-            <Pressable
-              style={[styles.dialogBtn, { backgroundColor: 'rgba(0, 229, 255, 0.2)', borderWidth: 1, borderColor: '#00e5ff', marginTop: 12, width: '100%', alignItems: 'center' }]}
-              onPress={toggleOrientation}
-            >
-              <Text style={[styles.dialogBtnText, { color: '#00e5ff' }]}>
-                {orientation === 'landscape' ? '📱 SWITCH TO PORTRAIT' : '🔄 SWITCH TO LANDSCAPE'}
-              </Text>
-            </Pressable>
+            <View style={{ width: '100%', marginTop: 14 }}>
+              <Text style={[styles.dialogNote, { textAlign: 'center', marginBottom: 8 }]}>SCREEN ORIENTATION</Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <Pressable
+                  style={[
+                    styles.dialogBtn,
+                    { flex: 1, alignItems: 'center', backgroundColor: orientation === 'portrait' ? '#00f5d4' : 'rgba(255,255,255,0.1)' },
+                  ]}
+                  onPress={() => setOrientation('portrait')}
+                >
+                  <Text style={[styles.dialogBtnText, { color: orientation === 'portrait' ? '#04111d' : 'white' }]}>
+                    📱 PORTRAIT
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.dialogBtn,
+                    { flex: 1, alignItems: 'center', backgroundColor: orientation === 'landscape' ? '#00e5ff' : 'rgba(255,255,255,0.1)' },
+                  ]}
+                  onPress={() => setOrientation('landscape')}
+                >
+                  <Text style={[styles.dialogBtnText, { color: orientation === 'landscape' ? '#04111d' : 'white' }]}>
+                    🔄 LANDSCAPE
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
             {session.kind !== 'solo' ? <Text style={styles.dialogNote}>The game keeps running while this is open.</Text> : null}
           </View>
         </View>
