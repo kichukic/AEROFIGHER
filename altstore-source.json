@@ -2,25 +2,44 @@
   "name": "AeroFighter",
   "identifier": "com.aerofighter.game.source",
   "subtitle": "Arcade Air Combat Simulator",
-  "description": "Fast-paced top-down aerial combat game with real-time multiplayer, Sky Force Reloaded visuals, homing missiles, and arcade killstreaks.",
+  "description": "Fast-paced top-down aerial combat game with real-time multiplayer, homing missiles, and arcade killstreaks.",
   "iconURL": "https://raw.githubusercontent.com/kichukic/AEROFIGHER/master/assets/icon.png",
   "website": "https://github.com/kichukic/AEROFIGHER",
+  "tintColor": "#00e5ff",
   "apps": [
     {
       "name": "AeroFighter",
       "bundleIdentifier": "com.aerofighter.game",
       "developerName": "kichukic",
-      "version": "1.0.5",
-      "versionDate": "2026-11-27T10:19:48Z",
-      "versionDescription": "Free sideloading release for AltStore, SideStore, and Sideloadly.",
-      "downloadURL": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.5/AeroFighter.ipa",
+      "subtitle": "Arcade air combat",
       "localizedDescription": "Fast-paced top-down aerial dogfights, breakable homing missiles, air-drop supply crates, and arcade killstreak perks.",
       "iconURL": "https://raw.githubusercontent.com/kichukic/AEROFIGHER/master/assets/icon.png",
-      "tintColor": "00e5ff",
-      "size": 52428800,
-      "screenshotURLs": [
+      "tintColor": "#00e5ff",
+      "category": "games",
+      "screenshots": [
         "https://raw.githubusercontent.com/kichukic/AEROFIGHER/master/assets/icon.png"
-      ]
+      ],
+      "versions": [
+        {
+          "version": "1.0.6",
+          "date": "2026-11-27T11:26:38Z",
+          "localizedDescription": "AeroFighter 1.0.6 \u2014 free sideload build.",
+          "downloadURL": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.6/AeroFighter.ipa",
+          "size": 15768368,
+          "minOSVersion": "16.4"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSMicrophoneUsageDescription": "Allow AeroFighter to access your microphone"
+        }
+      },
+      "version": "1.0.6",
+      "versionDate": "2026-11-27T11:26:38Z",
+      "versionDescription": "AeroFighter 1.0.6 \u2014 free sideload build.",
+      "downloadURL": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.6/AeroFighter.ipa",
+      "size": 15768368
     }
   ],
   "news": []
