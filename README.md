@@ -1,6 +1,14 @@
-# AeroFighter
+# AeroFighter ✈️⚡
 
 Top-down 2D aerial dogfight game for Android (React Native + Expo). Play solo against bots, or with up to 8 players on phones connected to one phone's Wi-Fi hotspot. No internet connection is needed.
+
+[![Download Standalone APK](https://img.shields.io/badge/Download-AeroFighter%20v1.0.0%20APK-00f5d4?style=for-the-badge&logo=android)](https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.0/AeroFighter-v1.0.0.apk)
+[![GitHub Release](https://img.shields.io/github/v/release/kichukic/AEROFIGHER?style=for-the-badge&color=ffd23f)](https://github.com/kichukic/AEROFIGHER/releases/tag/v1.0.0)
+
+### 📲 Quick Install
+Download the standalone APK directly from **[Releases v1.0.0](https://github.com/kichukic/AEROFIGHER/releases/tag/v1.0.0)**:
+- **[AeroFighter-v1.0.0.apk](https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.0/AeroFighter-v1.0.0.apk)** (50 MB)
+- Installs on any modern Android phone (`arm64-v8a`). Runs 100% offline without Expo dev servers or PC connection.
 
 ## Features
 
