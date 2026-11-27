@@ -1,59 +1,113 @@
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { PLANES, PLANE_TYPES, SPECIALS } from '../sim/planes';
 import { MAP_IDS, MAPS } from '../sim/maps';
 import { GameMode, isTeamMode, MapId, PlaneType } from '../sim/types';
 import { LobbyPlayer } from '../net/protocol';
 import { Segmented, styles, theme } from './ui';
+import { PlaneCanvas } from './PlaneCanvas';
+import { playSfx } from '../game/audio';
+import { useApp } from '../store/app';
 
-const PLANE_ICONS: Record<PlaneType, string> = {
-  interceptor: '⚡',
-  fighter: '⚔️',
-  bomber: '🛡️',
+const PLANE_COLORS: Record<PlaneType, string> = {
+  interceptor: '#00e5ff',
+  fighter: '#ffd23f',
+  bomber: '#ff3b3b',
+  stealth: '#c084fc',
+  gunship: '#10b981',
 };
 
 export function PlanePicker({ value, onChange }: { value: PlaneType; onChange: (t: PlaneType) => void }) {
+  const sound = useApp((s) => s.sound);
+
   return (
-    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}
+      style={{ marginBottom: 10, flexGrow: 0 }}
+    >
       {PLANE_TYPES.map((t) => {
         const s = PLANES[t];
         const active = t === value;
+        const color = PLANE_COLORS[t];
         return (
           <Pressable
             key={t}
-            onPress={() => onChange(t)}
+            onPress={() => {
+              if (sound && t !== value) playSfx('pickup', 0.5);
+              onChange(t);
+            }}
             style={{
-              flex: 1, padding: 10, borderRadius: 12, borderWidth: 2,
-              borderColor: active ? theme.accent : 'rgba(255,255,255,0.08)',
-              backgroundColor: active ? 'rgba(255,210,63,0.1)' : theme.panel,
-              shadowColor: active ? theme.accent : 'transparent',
-              shadowOpacity: active ? 0.3 : 0,
-              shadowRadius: 8,
+              width: 110,
+              padding: 8,
+              borderRadius: 14,
+              borderWidth: 2,
+              borderColor: active ? color : 'rgba(255,255,255,0.12)',
+              backgroundColor: active ? 'rgba(12, 27, 51, 0.95)' : '#071224',
+              shadowColor: active ? color : 'transparent',
+              shadowOpacity: active ? 0.4 : 0,
+              shadowRadius: 10,
+              alignItems: 'center',
             }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-              <Text style={{ color: active ? theme.accent : theme.text, fontWeight: '900', fontSize: 13 }}>{s.label}</Text>
-              <Text style={{ fontSize: 14 }}>{PLANE_ICONS[t]}</Text>
+            {/* Plane Skia Visual Graphic */}
+            <View style={{ height: 72, width: 72, alignItems: 'center', justifyContent: 'center', marginVertical: 2 }}>
+              <PlaneCanvas type={t} color={color} size={68} animated={active} showHangarRing={active} />
             </View>
-            <Text style={[styles.dim, { fontSize: 10, marginBottom: 4 }]} numberOfLines={1}>{s.description}</Text>
-            <Stat label="SPD" v={s.maxSpeed / 280} />
-            <Stat label="TURN" v={s.turnRate / 5.2} />
-            <Stat label="HP" v={s.hp / 160} />
-            <Stat label="DMG" v={s.bulletDamage / s.fireInterval / 75} />
-            <Text style={{ color: theme.cyan, fontSize: 10, fontWeight: '900', marginTop: 6 }}>{SPECIALS[t].label}</Text>
-            <Text style={[styles.dim, { fontSize: 9 }]} numberOfLines={2}>{SPECIALS[t].description}</Text>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 2 }}>
+              <Text style={{ color: active ? color : theme.text, fontWeight: '900', fontSize: 12, letterSpacing: 0.5 }}>
+                {s.label.toUpperCase()}
+              </Text>
+            </View>
+            <Text style={{ color: '#94a3b8', fontSize: 9, textAlign: 'center', marginBottom: 4 }} numberOfLines={1}>
+              {s.description}
+            </Text>
+
+            <View style={{ width: '100%', gap: 3, marginTop: 2 }}>
+              <Stat label="SPD" v={s.maxSpeed / 280} color={color} />
+              <Stat label="AGI" v={s.turnRate / 3.6} color={color} />
+              <Stat label="HP" v={s.hp / 160} color={color} />
+              <Stat label="DMG" v={(s.bulletDamage / s.fireInterval) / 75} color={color} />
+            </View>
+
+            <View
+              style={{
+                width: '100%',
+                marginTop: 6,
+                paddingVertical: 3,
+                paddingHorizontal: 4,
+                borderRadius: 6,
+                backgroundColor: active ? 'rgba(0, 229, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                borderWidth: 1,
+                borderColor: active ? color : 'transparent',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: active ? color : theme.dim, fontSize: 9, fontWeight: '900' }}>
+                {SPECIALS[t].label}
+              </Text>
+            </View>
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
-function Stat({ label, v }: { label: string; v: number }) {
+function Stat({ label, v, color }: { label: string; v: number; color?: string }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
-      <Text style={{ color: theme.dim, fontSize: 9, width: 32, fontWeight: '700' }}>{label}</Text>
-      <View style={{ flex: 1, height: 5, backgroundColor: theme.panelLight, borderRadius: 3 }}>
-        <View style={{ width: `${Math.min(1, v) * 100}%`, height: 5, backgroundColor: theme.accent, borderRadius: 3 }} />
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ color: '#94a3b8', fontSize: 8, width: 24, fontWeight: '800' }}>{label}</Text>
+      <View style={{ flex: 1, height: 4, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+        <View
+          style={{
+            width: `${Math.min(1, Math.max(0, v)) * 100}%`,
+            height: 4,
+            backgroundColor: color ?? theme.accent,
+            borderRadius: 2,
+          }}
+        />
       </View>
     </View>
   );
@@ -118,12 +172,15 @@ export const CAPTURE_OPTIONS = [
 export const MODE_LABEL: Record<GameMode, string> = { ffa: 'Free-for-all', tdm: 'Team Deathmatch', ctf: 'Capture the Flag' };
 
 const MAP_ICONS: Record<MapId, string> = {
-  farmland: '🌾',
-  ocean: '🌊',
-  desert: '🏜️',
-  arctic: '❄️',
-  canyon: '🌄',
-  night: '🌃',
+  farmland: 'SEC 01',
+  ocean: 'SEC 02',
+  desert: 'SEC 03',
+  arctic: 'SEC 04',
+  canyon: 'SEC 05',
+  night: 'SEC 06',
+  mountain: 'SEC 07',
+  forest: 'SEC 08',
+  city: 'SEC 09',
 };
 
 export function MapPicker({ value, onChange }: { value: MapId; onChange: (m: MapId) => void }) {
@@ -143,7 +200,7 @@ export function MapPicker({ value, onChange }: { value: MapId; onChange: (m: Map
                 borderColor: active ? theme.accent : 'transparent', backgroundColor: m.palette.sky,
               }}
             >
-              <Text style={{ fontSize: 13, marginBottom: 2 }}>{MAP_ICONS[id] ?? '✈️'}</Text>
+              <Text style={{ fontSize: 9, fontWeight: '900', color: active ? theme.accent : theme.cyan, marginBottom: 2 }}>{MAP_ICONS[id] ?? 'ZONE'}</Text>
               <Text style={{ color: id === 'night' || id === 'canyon' ? '#fff' : '#111', fontWeight: '900', fontSize: 11 }}>{m.label}</Text>
             </Pressable>
           );

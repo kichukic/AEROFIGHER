@@ -1,6 +1,7 @@
 import TcpSocket from 'react-native-tcp-socket';
 import { configFor, DEFAULT_CONFIG } from '../sim/world';
 import { GameEvent, IDLE_INPUT, Input, MatchConfig, PlaneType, PlayerSlot, World } from '../sim/types';
+import { PLANE_TYPES } from '../sim/planes';
 import {
   ClientMsg, GAME_PORT, HostMsg, LineDecoder, LobbyState, MAX_PLAYERS, PROTOCOL_VERSION,
   decodeInput, encodeSnapshot, frame,
@@ -155,7 +156,7 @@ export class HostServer {
         const p = this.lobby.players.find((q) => q.id === conn.id);
         if (!p || this.inMatch) return;
         if (m.team === 0 || m.team === 1) p.team = m.team;
-        if (m.type === 'interceptor' || m.type === 'fighter' || m.type === 'bomber') p.type = m.type;
+        if (m.type && (PLANE_TYPES as readonly string[]).includes(m.type)) p.type = m.type;
         if (typeof m.ready === 'boolean') p.ready = m.ready;
         this.lobbyChanged();
         break;
@@ -215,11 +216,11 @@ export class HostServer {
   /** Build the final slot list (humans + bots) and tell every client to start. */
   startMatch(seed: number): PlayerSlot[] {
     const slots: PlayerSlot[] = this.lobby.players.map((p) => ({ id: p.id, name: p.name, team: p.team, type: p.type, isBot: false }));
-    const types: PlaneType[] = ['fighter', 'interceptor', 'bomber'];
+    const types: PlaneType[] = ['fighter', 'interceptor', 'bomber', 'stealth', 'gunship'];
     for (let i = 0; i < this.lobby.bots; i++) {
       const t0 = slots.filter((s) => s.team === 0).length;
       const t1 = slots.filter((s) => s.team === 1).length;
-      slots.push({ id: 'bot' + i, name: 'Bot ' + BOT_NAMES[i % BOT_NAMES.length], team: t0 <= t1 ? 0 : 1, type: types[i % 3], isBot: true });
+      slots.push({ id: 'bot' + i, name: 'Bot ' + BOT_NAMES[i % BOT_NAMES.length], team: t0 <= t1 ? 0 : 1, type: types[i % types.length], isBot: true });
     }
     this.inMatch = true;
     for (const c of this.conns.values()) { c.input = IDLE_INPUT; c.lastSeq = -1; }

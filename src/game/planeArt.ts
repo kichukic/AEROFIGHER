@@ -106,6 +106,58 @@ function design(type: PlaneType): Design {
       scheme: { base: '#131822', wing: '#202737', dark: '#0b0f17', light: '#354157' },
     };
   }
+  if (type === 'stealth') {
+    // Sky Force "Shadow-X": Tactical stealth infiltrator with faceted diamond fuselage, canted V-tails and violet jet glow.
+    const body = mirror([[1.65, 0], [1.25, 0.1], [0.7, 0.22], [0.1, 0.24], [-0.55, 0.22], [-0.95, 0.15], [-1.08, 0.05]]);
+    const wings = pair([[0.48, 0.2], [-0.1, 1.3], [-0.42, 1.32], [-0.62, 0.85], [-0.52, 0.2]]);
+    const tail = pair([[-0.68, 0.14], [-0.98, 0.52], [-1.18, 0.46], [-1.05, 0.1]]);
+    const intakes = rrect(0.04, 0.14, 0.42, 0.11) + ' ' + rrect(0.04, -0.25, 0.42, 0.11);
+    return {
+      body: P(body), wings: P(wings), tail: P(tail), extras: P(intakes),
+      silhouette: P([body, wings, tail, intakes].join(' ')),
+      camo: [
+        { x: 0.4, y: 0.04, r: 0.14 }, { x: -0.2, y: -0.06, r: 0.15 }, { x: -0.25, y: 0.72, r: 0.16 },
+        { x: -0.3, y: -0.72, r: 0.16 }, { x: 0.05, y: -0.35, r: 0.12, light: true },
+      ],
+      bands: [R(-0.45, 0.72, 0.85, 0.12), R(-0.45, -0.84, 0.85, 0.12)],
+      noseBand: R(1.2, -0.25, 0.45, 0.5),
+      tailBand: R(-1.15, -0.55, 0.2, 1.1),
+      roundels: [[-0.2, 0.65], [-0.2, -0.65]],
+      panelLines: [[0.7, 0, 0.2, 0.22], [0.7, 0, 0.2, -0.22], [-0.2, -0.2, -0.2, 0.2], [0.15, 0.35, -0.35, 1.05], [0.15, -0.35, -0.35, -1.05]],
+      canopy: R(0.62, -0.075, 0.46, 0.15),
+      turret: null,
+      props: [],
+      propSpan: 0,
+      jets: [[-1.06, -0.07], [-1.06, 0.07]],
+      scheme: { base: '#1a1426', wing: '#281c3d', dark: '#0e0b16', light: '#463069' },
+    };
+  }
+  if (type === 'gunship') {
+    // Sky Force "Warthog-30": Rugged close air support titan with titanium armored bathtub nose, 30mm rotary cannon tip & twin turbofans.
+    const body = mirror([[1.68, 0], [1.68, 0.035], [1.5, 0.04], [1.42, 0.16], [0.82, 0.24], [0.22, 0.25], [-0.62, 0.22], [-1.12, 0.15], [-1.22, 0.07]]);
+    const wings = pair([[0.32, 0.22], [0.18, 1.48], [-0.04, 1.52], [-0.26, 1.48], [-0.34, 0.22]]);
+    const tail = pair([[-0.82, 0.16], [-0.94, 0.76], [-1.22, 0.78], [-1.22, 0.62], [-1.12, 0.12]]);
+    const engines = rrect(-0.62, 0.24, 0.58, 0.22) + ' ' + rrect(-0.62, -0.46, 0.58, 0.22);
+    return {
+      body: P(body), wings: P(wings), tail: P(tail), extras: P(engines),
+      silhouette: P([body, wings, tail, engines].join(' ')),
+      camo: [
+        { x: 0.1, y: 0.9, r: 0.22 }, { x: -0.1, y: -0.9, r: 0.22 }, { x: 0.5, y: -0.06, r: 0.17 },
+        { x: -0.4, y: 0.08, r: 0.18 }, { x: -0.85, y: -0.5, r: 0.15 },
+      ],
+      bands: [R(-0.35, 0.75, 0.85, 0.13), R(-0.35, -0.88, 0.85, 0.13)],
+      noseBand: R(1.15, -0.28, 0.35, 0.56),
+      tailBand: R(-1.26, -0.8, 0.24, 1.6),
+      roundels: [[-0.05, 1.15], [-0.05, -1.15]],
+      panelLines: [[0.75, -0.22, 0.75, 0.22], [0.1, -0.24, 0.1, 0.24], [-0.45, -0.2, -0.45, 0.2], [0.22, 0.35, 0.12, 1.4], [0.22, -0.35, 0.12, -1.4]],
+      canopy: R(0.82, -0.11, 0.38, 0.22),
+      turret: null,
+      props: [],
+      propSpan: 0,
+      jets: [[-0.64, -0.35], [-0.64, 0.35]],
+      scheme: { base: '#172f22', wing: '#234431', dark: '#0c1a12', light: '#366045' },
+    };
+  }
   // Fighter: Sky Force "Gladius" — high-performance twin-plasma strike fighter with swept wings.
   const body = mirror([[1.42, 0], [1.25, 0.1], [0.85, 0.17], [0.3, 0.19], [-0.65, 0.16], [-1.04, 0.1], [-1.1, 0.04]]);
   const wings = pair([[0.42, 0.18], [0.15, 1.18], [-0.08, 1.25], [-0.28, 1.16], [-0.34, 0.18]]);

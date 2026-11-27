@@ -23,7 +23,7 @@ export const PLANES: Record<PlaneType, PlaneStats> = {
     minSpeed: 125,
     maxSpeed: 280,
     accel: 220,
-    turnRate: 3.5,
+    turnRate: 3.4,
     hp: 70,
     radius: 16,
     fireInterval: 0.085,
@@ -62,9 +62,39 @@ export const PLANES: Record<PlaneType, PlaneStats> = {
     bulletLife: 1.55,
     missiles: 8,
   },
+  stealth: {
+    label: 'Stealth',
+    description: 'High velocity sniper, thermal cloak',
+    minSpeed: 115,
+    maxSpeed: 265,
+    accel: 200,
+    turnRate: 3.1,
+    hp: 85,
+    radius: 17,
+    fireInterval: 0.12,
+    bulletSpeed: 620,
+    bulletDamage: 11,
+    bulletLife: 1.35,
+    missiles: 4,
+  },
+  gunship: {
+    label: 'Gunship',
+    description: 'Heavy armor, 30mm rotary gatling stream',
+    minSpeed: 95,
+    maxSpeed: 215,
+    accel: 155,
+    turnRate: 2.5,
+    hp: 135,
+    radius: 20,
+    fireInterval: 0.065,
+    bulletSpeed: 510,
+    bulletDamage: 7,
+    bulletLife: 1.4,
+    missiles: 8,
+  },
 };
 
-export const PLANE_TYPES: PlaneType[] = ['interceptor', 'fighter', 'bomber'];
+export const PLANE_TYPES: PlaneType[] = ['interceptor', 'fighter', 'bomber', 'stealth', 'gunship'];
 
 export interface SpecialDef {
   kind: SpecialKind;
@@ -78,4 +108,6 @@ export const SPECIALS: Record<PlaneType, SpecialDef> = {
   interceptor: { kind: 'dash', label: 'DASH', description: 'Afterburner burst of speed', cooldown: 7 },
   fighter: { kind: 'flare', label: 'FLARE', description: 'Shake off all missiles locked on you', cooldown: 10 },
   bomber: { kind: 'flak', label: 'FLAK', description: 'Blast bullets in every direction', cooldown: 9 },
+  stealth: { kind: 'cloak', label: 'CLOAK', description: 'Thermal camo: breaks all locks & grants 3.5s shield', cooldown: 11 },
+  gunship: { kind: 'overdrive', label: 'OVERDRIVE', description: 'Gatling surge: maximum fire-rate & boost for 4s', cooldown: 10 },
 };

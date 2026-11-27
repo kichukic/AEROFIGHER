@@ -1,8 +1,8 @@
-export type PlaneType = 'interceptor' | 'fighter' | 'bomber';
+export type PlaneType = 'interceptor' | 'fighter' | 'bomber' | 'stealth' | 'gunship';
 export type GameMode = 'ffa' | 'tdm' | 'ctf';
 export type PickupKind = 'repair' | 'shield' | 'missiles' | 'boost';
-export type MapId = 'farmland' | 'ocean' | 'desert' | 'arctic' | 'canyon' | 'night';
-export type SpecialKind = 'dash' | 'flare' | 'flak';
+export type MapId = 'farmland' | 'ocean' | 'desert' | 'arctic' | 'canyon' | 'night' | 'mountain' | 'forest' | 'city';
+export type SpecialKind = 'dash' | 'flare' | 'flak' | 'cloak' | 'overdrive';
 export type Weapon = 'gun' | 'missile' | 'zone' | 'crash' | 'flak';
 
 /** Player intent for one tick. `aim` is the desired heading in radians, or null to keep flying straight. */
@@ -125,7 +125,7 @@ export type FlagAction = 'take' | 'drop' | 'return' | 'capture';
 
 export type GameEvent =
   | { t: 'kill'; killer: string | null; victim: string; weapon: Weapon }
-  | { t: 'explode'; x: number; y: number; big: boolean }
+  | { t: 'explode'; x: number; y: number; big: boolean; ground?: boolean }
   | { t: 'hit'; x: number; y: number; dmg?: number }
   | { t: 'pickup'; id: string; kind: PickupKind }
   | { t: 'special'; id: string; kind: SpecialKind; x: number; y: number }

@@ -165,8 +165,8 @@ const shadow = { textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3, textSh
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
-  status: { position: 'absolute', top: 10, left: 98, width: 145 },
-  statusLandscape: { top: 8, left: 98, width: 145 },
+  status: { position: 'absolute', top: 10, left: 58, width: 145 },
+  statusLandscape: { top: 8, left: 58, width: 145 },
   statusLabel: { color: 'white', fontWeight: '900', fontSize: 12, ...shadow },
   statusSmall: { color: 'white', fontWeight: '700', fontSize: 11, marginTop: 3, ...shadow },
   hpBar: { height: 10, borderRadius: 5, backgroundColor: 'rgba(5, 12, 24, 0.75)', borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.35)', marginTop: 3, overflow: 'hidden', position: 'relative' },
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
   comboText: { color: '#ffb703', fontWeight: '900', fontSize: 10, letterSpacing: 0.8 },
   tag: { color: '#04111d', fontSize: 10, fontWeight: '900', paddingHorizontal: 5, borderRadius: 4, marginRight: 4, marginTop: 3, overflow: 'hidden' },
   top: { position: 'absolute', top: 68, left: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  topLandscape: { top: 8, left: 255, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  topLandscape: { top: 8, left: 215, flexDirection: 'row', alignItems: 'center', gap: 12 },
   timer: { color: '#00e5ff', fontSize: 22, fontWeight: '900', letterSpacing: 1.2, ...shadow },
   score: { fontSize: 22, fontWeight: '900', ...shadow },
   scoreSep: { color: 'white', fontSize: 20, fontWeight: '900', ...shadow },

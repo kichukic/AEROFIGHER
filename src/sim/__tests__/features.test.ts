@@ -1,7 +1,7 @@
 /// <reference types="jest" />
-import { configFor, createWorld, findAutoFireTarget, findLockTarget, step, DT, FLAG_RETURN_TIME } from '../world';
+import { configFor, createClouds, createWorld, findAutoFireTarget, findLockTarget, step, DT, FLAG_RETURN_TIME } from '../world';
 import { botInput } from '../bots';
-import { IDLE_INPUT, Input, PlayerSlot, World } from '../types';
+import { IDLE_INPUT, Input, MapId, PlayerSlot, World } from '../types';
 import { PLANES, SPECIALS } from '../planes';
 import { MAP_IDS, MAPS } from '../maps';
 import { applySnapshot, encodeSnapshot } from '../../net/protocol';
@@ -52,6 +52,30 @@ describe('special abilities', () => {
     step(w, { a: go({ special: true }) });
     for (let i = 0; i < 6; i++) { b.x = w.planes[0].x; b.y = w.planes[0].y + 100; step(w, {}); }
     expect(b.hp).toBeLessThan(hp);
+  });
+
+  test('stealth cloak gives temporary shield, flare immunity and breaks missile locks', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('stealth', 'fighter'));
+    park(w);
+    w.planes[1].x = 1500;
+    // Fighter fires missile at stealth
+    step(w, { b: go({ aim: Math.PI, missile: true }) });
+    expect(w.missiles[0].target).toBe('a');
+    // Stealth activates cloak
+    step(w, { a: go({ special: true }) });
+    expect(w.planes[0].shieldUntil).toBeGreaterThan(w.time);
+    expect(w.planes[0].flareUntil).toBeGreaterThan(w.time);
+    expect(w.missiles.every((m) => m.target === null)).toBe(true);
+    expect(w.events.some((e) => e.t === 'special' && e.kind === 'cloak')).toBe(true);
+  });
+
+  test('gunship overdrive activates speed surge and overdrive perk', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('gunship', 'fighter'));
+    park(w);
+    step(w, { a: go({ special: true }) });
+    expect(w.planes[0].perk?.kind).toBe('overdrive');
+    expect(w.planes[0].boostUntil).toBeGreaterThan(w.time);
+    expect(w.events.some((e) => e.t === 'special' && e.kind === 'overdrive')).toBe(true);
   });
 });
 
@@ -198,6 +222,15 @@ describe('tactical clouds', () => {
     applySnapshot(mirror, JSON.parse(JSON.stringify(encodeSnapshot(w))));
     expect(mirror.planes[0].inCloud).toBe(true);
   });
+
+  test('createClouds generates restrained number of clouds (between 2 and 5)', () => {
+    const maps: MapId[] = ['farmland', 'ocean', 'desert', 'arctic', 'canyon', 'night'];
+    for (const m of maps) {
+      const clouds = createClouds(configFor('ffa', m));
+      expect(clouds.length).toBeGreaterThanOrEqual(2);
+      expect(clouds.length).toBeLessThanOrEqual(5);
+    }
+  });
 });
 
 describe('auto-fire targeting', () => {
@@ -327,5 +360,30 @@ describe('true homing missiles', () => {
     // Target was too far off-boresight, missile must lose lock and not re-lock
     expect(w.missiles[0].target).toBeNull();
     expect(w.missiles[0].lostLock).toBe(true);
+  });
+
+  test('missed missile expiring its life lands on ground with ground explosion event', () => {
+    const w = createWorld(configFor('ffa', 'farmland'), two('fighter', 'fighter'));
+    park(w);
+    // Inject missile with very short life
+    w.missiles.push({
+      id: 995,
+      owner: 'a',
+      team: 0,
+      x: 1200,
+      y: 1200,
+      angle: 0,
+      speed: 245,
+      target: null,
+      life: 0.01,
+    });
+
+    step(w, {});
+    expect(w.missiles.length).toBe(0);
+    const groundExplode = w.events.find((e): e is Extract<typeof w.events[number], { t: 'explode' }> => e.t === 'explode' && e.ground === true);
+    expect(groundExplode).toBeDefined();
+    expect(groundExplode?.x).toBeGreaterThan(1200);
+    expect(groundExplode?.x).toBeLessThan(1250);
+    expect(groundExplode?.big).toBe(true);
   });
 });

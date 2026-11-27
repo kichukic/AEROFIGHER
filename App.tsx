@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BackHandler, Dimensions, ScaledSize, View } from 'react-native';
+import { BackHandler, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { go, leaveToHome, useApp } from './src/store/app';
@@ -18,28 +18,13 @@ export default function App() {
 
   useEffect(() => {
     initAudio().catch(() => {});
-
-    // Sync initial device orientation if held horizontally
-    ScreenOrientation.getOrientationAsync().then((o) => {
-      const isLand = o === ScreenOrientation.Orientation.LANDSCAPE_LEFT || o === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
-      if (isLand) useApp.setState({ orientation: 'landscape' });
-    }).catch(() => {});
-
-    const sub = ScreenOrientation.addOrientationChangeListener((evt) => {
-      const o = evt.orientationInfo.orientation;
-      const isLand = o === ScreenOrientation.Orientation.LANDSCAPE_LEFT || o === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
-      useApp.setState({ orientation: isLand ? 'landscape' : 'portrait' });
-    });
-
-    const dimSub = Dimensions.addEventListener('change', ({ window }: { window: ScaledSize; screen: ScaledSize }) => {
-      const isLand = window.width > window.height;
-      useApp.setState({ orientation: isLand ? 'landscape' : 'portrait' });
-    });
-
-    return () => {
-      ScreenOrientation.removeOrientationChangeListener(sub);
-      dimSub.remove();
-    };
+    // Strictly lock orientation based on user choice, completely ignoring sensor
+    const target = useApp.getState().orientation;
+    ScreenOrientation.lockAsync(
+      target === 'landscape'
+        ? ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
+        : ScreenOrientation.OrientationLock.PORTRAIT_UP
+    ).catch(() => {});
   }, []);
 
   // Android back button: step back sensibly instead of exiting the app.

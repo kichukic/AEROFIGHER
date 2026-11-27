@@ -93,9 +93,17 @@ export function createClouds(config: MatchConfig): Cloud[] {
   const out: Cloud[] = [];
   let s = 1337;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const density = MAPS[config.map]?.cloudDensity ?? 0.45;
-  const n = Math.round(((config.arenaW * config.arenaH) / 100000) * density);
-  for (let i = 0; i < n; i++) out.push({ x: rnd() * config.arenaW, y: rnd() * config.arenaH, r: 40 + rnd() * 70 });
+  const density = MAPS[config.map]?.cloudDensity ?? 0.05;
+  // Restrained cloud count (2 to 5 max) so the sky remains open, tactical, and clean
+  const rawN = Math.round(((config.arenaW * config.arenaH) / 100000) * density);
+  const n = Math.max(2, Math.min(5, rawN));
+  for (let i = 0; i < n; i++) {
+    out.push({
+      x: 350 + rnd() * (config.arenaW - 700),
+      y: 350 + rnd() * (config.arenaH - 700),
+      r: 55 + rnd() * 60,
+    });
+  }
   return out;
 }
 
@@ -111,7 +119,7 @@ export function createWorld(config: MatchConfig, slots: PlayerSlot[], seed = 123
     pickups: [],
     crates: [],
     flags: [],
-    obstacles: map.obstacles.map((o) => ({ ...o })),
+    obstacles: map.obstacles.map((o: Obstacle) => ({ ...o })),
     clouds: createClouds(config),
     nextId: 1,
     nextPickupAt: 2,
@@ -285,13 +293,26 @@ export function speedMult(w: World, p: Plane): number {
 export function movePlane(p: Plane, input: Input, dt: number, mult: number): void {
   const stats = PLANES[p.type];
   if (input.aim !== null && Number.isFinite(input.aim)) {
-    const targetAngle = turnTowards(p.angle, input.aim, stats.turnRate * dt);
-    const diff = angleDiff(p.angle, targetAngle);
-    const targetBank = clamp(diff / (stats.turnRate * dt || 1e-4), -1, 1);
-    p.bank = (p.bank ?? 0) + (targetBank - (p.bank ?? 0)) * Math.min(1, dt * 14);
+    // Smooth angular velocity: instead of snapping to max turn rate instantly,
+    // the effective turn rate ramps up over time (like real aircraft inertia).
+    // This makes steering feel smooth and weighty rather than twitchy.
+    const diff = angleDiff(p.angle, input.aim);
+    const absDiff = Math.abs(diff);
+
+    // Scale down turn rate when the angle difference is small (fine-tuning control)
+    // and ramp up smoothly as the stick is pushed further from current heading
+    const steerFrac = Math.min(1, absDiff / 1.2); // 0..1 based on how far the target is
+    const smoothedRate = stats.turnRate * (0.3 + 0.7 * steerFrac); // min 30% turn rate for responsiveness
+
+    const targetAngle = turnTowards(p.angle, input.aim, smoothedRate * dt);
+    const angleMoved = angleDiff(p.angle, targetAngle);
+    const targetBank = clamp(angleMoved / (stats.turnRate * dt || 1e-4), -1, 1);
+    // Slower bank transition for smoother visual roll (dt * 8 instead of dt * 14)
+    p.bank = (p.bank ?? 0) + (targetBank - (p.bank ?? 0)) * Math.min(1, dt * 8);
     p.angle = targetAngle;
   } else {
-    p.bank = (p.bank ?? 0) * Math.max(0, 1 - dt * 6);
+    // Smoother bank recovery when stick is released
+    p.bank = (p.bank ?? 0) * Math.max(0, 1 - dt * 4);
   }
   const maxS = stats.maxSpeed * mult;
   // While dashing (mult >= DASH_MULT) we fly flat out regardless of throttle.
@@ -305,8 +326,8 @@ export function movePlane(p: Plane, input: Input, dt: number, mult: number): voi
   // Forward vector driven by current heading
   const fX = Math.cos(p.angle) * p.speed;
   const fY = Math.sin(p.angle) * p.speed;
-  // Wing grip smoothly aligns velocity vector to heading while allowing subtle momentum drift
-  const grip = Math.min(1, dt * 22);
+  // Wing grip smoothly aligns velocity vector to heading while allowing visible momentum drift
+  const grip = Math.min(1, dt * 14);
   p.vx = (p.vx ?? fX) + (fX - (p.vx ?? fX)) * grip;
   p.vy = (p.vy ?? fY) + (fY - (p.vy ?? fY)) * grip;
   p.x += p.vx * dt;
@@ -367,6 +388,15 @@ function activateSpecial(w: World, p: Plane): void {
           life: FLAK_LIFE, dmg: FLAK_DAMAGE, flak: true,
         });
       }
+      break;
+    case 'cloak':
+      p.shieldUntil = w.time + 3.5;
+      p.flareUntil = w.time + 3.5;
+      for (const m of w.missiles) if (m.target === p.id) m.target = null;
+      break;
+    case 'overdrive':
+      p.perk = { kind: 'overdrive', until: w.time + 4.0 };
+      p.boostUntil = w.time + 2.5;
       break;
   }
 }
@@ -676,7 +706,7 @@ function stepProjectiles(w: World, dt: number): void {
     m.x += Math.cos(m.angle) * m.speed * dt;
     m.y += Math.sin(m.angle) * m.speed * dt;
     if (m.life <= 0 || insideObstacle(w.obstacles, m.x, m.y, 0)) {
-      w.events.push({ t: 'explode', x: m.x, y: m.y, big: false });
+      w.events.push({ t: 'explode', x: m.x, y: m.y, big: true, ground: true });
       continue;
     }
     let hit = false;

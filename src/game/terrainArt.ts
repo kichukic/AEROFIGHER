@@ -228,6 +228,17 @@ interface TerrainPaints {
   treeMid: SkPaint[];
   treeLight: SkPaint[];
   treeCore: SkPaint;
+  // Enhanced tree paints for lush tropical foliage
+  treeTrunk: SkPaint;
+  treeTrunkLight: SkPaint;
+  treeFrondDark: SkPaint[];
+  treeFrondMid: SkPaint[];
+  treeFrondLight: SkPaint[];
+  treeFrondTip: SkPaint;
+  treeCanopyDeep: SkPaint;
+  treeShadowSoft: SkPaint;
+  treeHighlight: SkPaint;
+  treeBark: SkPaint;
 }
 
 let paints: TerrainPaints | null = null;
@@ -266,6 +277,17 @@ function getPaints(): TerrainPaints {
     treeMid: [paint('#3c802b'), paint('#32753a'), paint('#4c8a29')],
     treeLight: [paint('#62b047'), paint('#53a85b'), paint('#74bd41')],
     treeCore: paint('#152812', 0, 0.8),
+    // Enhanced tropical tree paints
+    treeTrunk: paint('#3d2816'),
+    treeTrunkLight: paint('#5a3f26'),
+    treeFrondDark: [paint('#0e3310'), paint('#153a14'), paint('#1a4518')],
+    treeFrondMid: [paint('#2a6b22'), paint('#256b30'), paint('#367a26')],
+    treeFrondLight: [paint('#4aad3a'), paint('#3fa848'), paint('#58b836')],
+    treeFrondTip: paint('#7dd66a'),
+    treeCanopyDeep: paint('#0a2a0c', 0, 0.75),
+    treeShadowSoft: paint('#000000', 0, 0.35),
+    treeHighlight: paint('#a8e890', 0, 0.65),
+    treeBark: paint('#2a1c0e', 0, 0.9),
   };
   return paints;
 }
@@ -416,7 +438,9 @@ export function drawGroundTerrain(
 }
 
 /**
- * Draw 2D cartoon top-down trees with drop shadows, foliage layers, and sunlit leaf highlights.
+ * Draw lush, detailed top-down trees with layered foliage, trunk detail,
+ * palm fronds (tropical maps), drop shadows, and sunlit highlights.
+ * Inspired by Sky Force Reloaded's island terrain vegetation.
  */
 export function drawTrees(
   canvas: SkCanvas,
@@ -425,35 +449,181 @@ export function drawTrees(
   mapId: MapId,
 ) {
   const p = getPaints();
+  const isPalm = mapId === 'desert' || mapId === 'canyon' || mapId === 'ocean';
+  const isPine = mapId === 'arctic';
 
-  // Step 1: Shadows first so all tree canopies cleanly overlap shadows
+  // Step 1: Deep ground shadows for all trees (drawn first so canopies overlap them)
   for (const t of trees) {
-    if (!visible(t.x, t.y, t.r + 30)) continue;
-    canvas.drawCircle(t.x + t.r * 0.45, t.y + t.r * 0.65, t.r * 0.92, p.shadow);
+    if (!visible(t.x, t.y, t.r + 35)) continue;
+    // Large, soft elliptical shadow offset to bottom-right (sun from upper-left)
+    p.treeShadowSoft.setAlphaf(0.32);
+    canvas.drawOval(
+      Skia.XYWHRect(
+        t.x + t.r * 0.3 - t.r * 1.1,
+        t.y + t.r * 0.5 - t.r * 0.7,
+        t.r * 2.2,
+        t.r * 1.4,
+      ),
+      p.treeShadowSoft,
+    );
   }
 
-  // Step 2: Foliage canopies
+  // Step 2: Tree canopies with rich detail
   for (const t of trees) {
-    if (!visible(t.x, t.y, t.r + 30)) continue;
+    if (!visible(t.x, t.y, t.r + 35)) continue;
     const s = t.shade % 3;
 
-    // Outer dark foliage base
-    canvas.drawCircle(t.x, t.y, t.r, p.treeDark[s]);
+    if (isPalm) {
+      // --- Tropical Palm Tree ---
+      // Trunk: visible diagonal woody trunk
+      canvas.save();
+      canvas.translate(t.x, t.y);
+      // Thick trunk base
+      const trunkAngle = (s * 0.4 - 0.2);
+      canvas.drawLine(
+        trunkAngle * t.r * 0.3, t.r * 0.4,
+        -trunkAngle * t.r * 0.15, -t.r * 0.15,
+        p.treeBark,
+      );
+      p.treeTrunk.setStrokeWidth(t.r * 0.22);
+      p.treeTrunk.setStyle(PaintStyle.Stroke);
+      p.treeTrunk.setStrokeCap(StrokeCap.Round);
+      canvas.drawLine(
+        trunkAngle * t.r * 0.25, t.r * 0.35,
+        -trunkAngle * t.r * 0.1, -t.r * 0.1,
+        p.treeTrunk,
+      );
+      p.treeTrunkLight.setStrokeWidth(t.r * 0.08);
+      p.treeTrunkLight.setStyle(PaintStyle.Stroke);
+      p.treeTrunkLight.setStrokeCap(StrokeCap.Round);
+      canvas.drawLine(
+        trunkAngle * t.r * 0.22, t.r * 0.3,
+        -trunkAngle * t.r * 0.08, -t.r * 0.05,
+        p.treeTrunkLight,
+      );
 
-    // Secondary cute leaf lobes around the rim for fluffy organic silhouette
-    const lobeDist = t.r * 0.48;
-    canvas.drawCircle(t.x - lobeDist, t.y - lobeDist * 0.3, t.r * 0.52, p.treeDark[s]);
-    canvas.drawCircle(t.x + lobeDist * 0.8, t.y - lobeDist * 0.4, t.r * 0.48, p.treeDark[s]);
-    canvas.drawCircle(t.x + lobeDist * 0.2, t.y + lobeDist * 0.8, t.r * 0.5, p.treeDark[s]);
+      // Palm fronds: 6-8 elongated leaf blades radiating from crown center
+      const numFronds = 6 + (s % 3);
+      const crownX = -trunkAngle * t.r * 0.1;
+      const crownY = -t.r * 0.15;
+      for (let fi = 0; fi < numFronds; fi++) {
+        const frondAngle = (fi / numFronds) * Math.PI * 2 + s * 0.3;
+        const frondLen = t.r * (0.9 + (fi % 3) * 0.15);
+        const tipX = crownX + Math.cos(frondAngle) * frondLen;
+        const tipY = crownY + Math.sin(frondAngle) * frondLen;
+        const midX = crownX + Math.cos(frondAngle) * frondLen * 0.55;
+        const midY = crownY + Math.sin(frondAngle) * frondLen * 0.55;
 
-    // Inner vibrant leaf canopy
-    canvas.drawCircle(t.x, t.y, t.r * 0.82, p.treeMid[s]);
-    canvas.drawCircle(t.x - lobeDist * 0.8, t.y - lobeDist * 0.3, t.r * 0.4, p.treeMid[s]);
+        // Dark frond base
+        p.treeFrondDark[s].setStrokeWidth(t.r * 0.28);
+        p.treeFrondDark[s].setStyle(PaintStyle.Stroke);
+        p.treeFrondDark[s].setStrokeCap(StrokeCap.Round);
+        canvas.drawLine(crownX, crownY, midX, midY, p.treeFrondDark[s]);
 
-    // Sunlit leaf highlight crescent (upper-left)
-    canvas.drawCircle(t.x - t.r * 0.24, t.y - t.r * 0.24, t.r * 0.46, p.treeLight[s]);
+        // Mid green frond
+        p.treeFrondMid[s].setStrokeWidth(t.r * 0.2);
+        p.treeFrondMid[s].setStyle(PaintStyle.Stroke);
+        p.treeFrondMid[s].setStrokeCap(StrokeCap.Round);
+        canvas.drawLine(midX, midY, tipX, tipY, p.treeFrondMid[s]);
 
-    // Center tree crown core
-    canvas.drawCircle(t.x, t.y, t.r * 0.16, p.treeCore);
+        // Bright frond tip
+        const tipEndX = crownX + Math.cos(frondAngle) * frondLen * 0.85;
+        const tipEndY = crownY + Math.sin(frondAngle) * frondLen * 0.85;
+        p.treeFrondLight[s].setStrokeWidth(t.r * 0.12);
+        p.treeFrondLight[s].setStyle(PaintStyle.Stroke);
+        p.treeFrondLight[s].setStrokeCap(StrokeCap.Round);
+        canvas.drawLine(tipEndX, tipEndY, tipX, tipY, p.treeFrondLight[s]);
+      }
+
+      // Crown center tuft
+      canvas.drawCircle(crownX, crownY, t.r * 0.18, p.treeFrondDark[s]);
+      canvas.drawCircle(crownX, crownY, t.r * 0.1, p.treeFrondMid[s]);
+
+      canvas.restore();
+    } else if (isPine) {
+      // --- Conifer / Pine ---
+      // Pointed triangular silhouette with layered dark-to-light tiers
+      const tiers = 3;
+      for (let ti = 0; ti < tiers; ti++) {
+        const tierFrac = ti / tiers;
+        const tierR = t.r * (1.0 - tierFrac * 0.25);
+        const tierY = t.y - tierFrac * t.r * 0.3;
+
+        // Dark outer tier
+        canvas.drawOval(
+          Skia.XYWHRect(t.x - tierR, tierY - tierR * 0.7, tierR * 2, tierR * 1.4),
+          p.treeDark[s],
+        );
+        // Mid tier
+        canvas.drawOval(
+          Skia.XYWHRect(t.x - tierR * 0.75, tierY - tierR * 0.5, tierR * 1.5, tierR * 1.0),
+          p.treeMid[s],
+        );
+      }
+      // Snow-capped or sunlit tip
+      canvas.drawCircle(t.x - t.r * 0.15, t.y - t.r * 0.3, t.r * 0.3, p.treeLight[s]);
+      // Trunk dot
+      canvas.drawCircle(t.x, t.y + t.r * 0.3, t.r * 0.12, p.treeCore);
+    } else {
+      // --- Deciduous Oak / Broadleaf (lush tropical-style) ---
+      // Deep shadow underlayer for 3D depth
+      p.treeCanopyDeep.setAlphaf(0.7);
+      canvas.drawCircle(t.x + t.r * 0.08, t.y + t.r * 0.1, t.r * 1.05, p.treeCanopyDeep);
+
+      // Outer dark foliage mass with organic irregular edge (overlapping lobes)
+      canvas.drawCircle(t.x, t.y, t.r, p.treeDark[s]);
+
+      // 5 organic sub-canopy lobes for fluffy layered silhouette
+      const numLobes = 5;
+      for (let li = 0; li < numLobes; li++) {
+        const lobeAngle = (li / numLobes) * Math.PI * 2 + s * 0.5;
+        const lobeDist = t.r * 0.4;
+        const lobeR = t.r * (0.52 + (li % 3) * 0.06);
+        const lx = t.x + Math.cos(lobeAngle) * lobeDist;
+        const ly = t.y + Math.sin(lobeAngle) * lobeDist;
+
+        // Dark outer lobe
+        canvas.drawCircle(lx, ly, lobeR, p.treeDark[s]);
+        // Mid green inner lobe
+        canvas.drawCircle(lx, ly, lobeR * 0.78, p.treeMid[s]);
+      }
+
+      // Inner vibrant leaf canopy (main mass)
+      canvas.drawCircle(t.x, t.y, t.r * 0.78, p.treeMid[s]);
+
+      // Secondary inner lobes for depth
+      for (let li = 0; li < 3; li++) {
+        const a2 = (li / 3) * Math.PI * 2 + s * 0.8 + 0.5;
+        const d2 = t.r * 0.25;
+        canvas.drawCircle(
+          t.x + Math.cos(a2) * d2,
+          t.y + Math.sin(a2) * d2,
+          t.r * 0.45,
+          p.treeMid[s],
+        );
+      }
+
+      // Sunlit highlight crescent (upper-left, strong)
+      canvas.drawCircle(t.x - t.r * 0.22, t.y - t.r * 0.22, t.r * 0.5, p.treeLight[s]);
+      // Bright leaf tip highlights (smaller scattered)
+      canvas.drawCircle(t.x - t.r * 0.35, t.y - t.r * 0.1, t.r * 0.22, p.treeHighlight);
+      canvas.drawCircle(t.x - t.r * 0.1, t.y - t.r * 0.38, t.r * 0.18, p.treeHighlight);
+
+      // Bright frond-like tips at the edge (simulate visible leaf clusters)
+      for (let ti = 0; ti < 4; ti++) {
+        const tipAngle = (ti / 4) * Math.PI * 2 + s * 0.7 + 0.3;
+        const tipDist = t.r * 0.75;
+        const tipR = t.r * 0.18;
+        canvas.drawCircle(
+          t.x + Math.cos(tipAngle) * tipDist,
+          t.y + Math.sin(tipAngle) * tipDist,
+          tipR,
+          p.treeFrondLight[s],
+        );
+      }
+
+      // Center trunk / core dark spot
+      canvas.drawCircle(t.x, t.y, t.r * 0.14, p.treeCore);
+    }
   }
 }

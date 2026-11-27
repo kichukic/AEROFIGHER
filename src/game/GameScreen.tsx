@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Canvas, createPicture, Picture, SkPicture } from '@shopify/react-native-skia';
 import { useKeepAwake } from 'expo-keep-awake';
-import { finishMatch, leaveToHome, setOrientation, toggleOrientation, useApp } from '../store/app';
+import { finishMatch, leaveToHome, setOrientation, useApp } from '../store/app';
 import { GameEvent, IDLE_INPUT, Input } from '../sim/types';
 import { SPECIALS } from '../sim/planes';
 import { Controls } from './Controls';
@@ -134,7 +134,7 @@ export function GameScreen() {
       const events = session.update(dt);
       handleEvents(events);
       feedback.update(dt, events, inputRef.current, cam);
-      fx.update(dt, session.world.planes);
+      fx.update(dt, session.world.planes, session.world.clouds);
 
       // Camera follows our plane smoothly.
       const me = session.world.planes.find((p) => p.id === session.myId);
@@ -214,9 +214,6 @@ export function GameScreen() {
       <Pressable onPress={() => setConfirmLeave(true)} style={styles.menuBtn} hitSlop={10}>
         <Text style={styles.menuText}>II</Text>
       </Pressable>
-      <Pressable onPress={toggleOrientation} style={[styles.menuBtn, { left: 54 }]} hitSlop={10}>
-        <Text style={{ fontSize: 16 }}>{orientation === 'landscape' ? '📱' : '🔄'}</Text>
-      </Pressable>
       {confirmLeave ? (
         <View style={styles.overlay}>
           <View style={styles.dialog}>
@@ -237,23 +234,35 @@ export function GameScreen() {
                 <Pressable
                   style={[
                     styles.dialogBtn,
-                    { flex: 1, alignItems: 'center', backgroundColor: orientation === 'portrait' ? '#00f5d4' : 'rgba(255,255,255,0.1)' },
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      backgroundColor: orientation === 'portrait' ? '#ffd23f' : '#0c1a2e',
+                      borderWidth: 1.5,
+                      borderColor: orientation === 'portrait' ? '#ffd23f' : 'rgba(255,255,255,0.28)',
+                    },
                   ]}
                   onPress={() => setOrientation('portrait')}
                 >
-                  <Text style={[styles.dialogBtnText, { color: orientation === 'portrait' ? '#04111d' : 'white' }]}>
-                    📱 PORTRAIT
+                  <Text style={[styles.dialogBtnText, { color: orientation === 'portrait' ? '#04111d' : '#ffffff' }]}>
+                    📱 PORTRAIT {orientation === 'portrait' ? '●' : ''}
                   </Text>
                 </Pressable>
                 <Pressable
                   style={[
                     styles.dialogBtn,
-                    { flex: 1, alignItems: 'center', backgroundColor: orientation === 'landscape' ? '#00e5ff' : 'rgba(255,255,255,0.1)' },
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      backgroundColor: orientation === 'landscape' ? '#00e5ff' : '#0c1a2e',
+                      borderWidth: 1.5,
+                      borderColor: orientation === 'landscape' ? '#00e5ff' : 'rgba(255,255,255,0.28)',
+                    },
                   ]}
                   onPress={() => setOrientation('landscape')}
                 >
-                  <Text style={[styles.dialogBtnText, { color: orientation === 'landscape' ? '#04111d' : 'white' }]}>
-                    🔄 LANDSCAPE
+                  <Text style={[styles.dialogBtnText, { color: orientation === 'landscape' ? '#04111d' : '#ffffff' }]}>
+                    🔄 LANDSCAPE {orientation === 'landscape' ? '●' : ''}
                   </Text>
                 </Pressable>
               </View>

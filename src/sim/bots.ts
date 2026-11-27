@@ -134,6 +134,10 @@ function wantSpecial(w: World, me: Plane, target: Plane | null, d2: number, chas
       return w.missiles.some((m) => m.target === me.id && dist2(m.x, m.y, me.x, me.y) < 380 * 380);
     case 'flak':
       return target !== null && d2 < 170 * 170;
+    case 'cloak':
+      return w.missiles.some((m) => m.target === me.id && dist2(m.x, m.y, me.x, me.y) < 400 * 400) || (me.hp < PLANES[me.type].hp * 0.35);
+    case 'overdrive':
+      return target !== null && d2 < 450 * 450;
   }
 }
 

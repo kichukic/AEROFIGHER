@@ -44,6 +44,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
     fireIds: new Set<string>(),
     missileIds: new Set<string>(),
     specialIds: new Set<string>(),
+    autoToggledIds: new Set<string>(),
     input: { aim: null, throttle: 0.65, fire: false, missile: false, special: false } as Input,
   });
 
@@ -108,10 +109,10 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       const dy = s.knob.y - s.base.y;
       const dist = Math.hypot(dx, dy);
       const rawMag = Math.min(1, dist / STICK_R);
-      const DEADZONE = 0.12;
+      const DEADZONE = 0.14; // Clean deadzone to prevent micro-drift
       if (rawMag > DEADZONE) {
         const norm = (rawMag - DEADZONE) / (1 - DEADZONE);
-        const curvedMag = Math.pow(norm, 1.25);
+        const curvedMag = Math.pow(norm, 1.2);
         s.input = {
           aim: Math.atan2(dy, dx),
           throttle: 0.50 + 0.45 * curvedMag,
@@ -129,26 +130,53 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
         };
       }
     } else {
-      s.input = { aim: null, throttle: 0.65, fire: s.fireIds.size > 0, missile: s.missileIds.size > 0, special: s.specialIds.size > 0 };
+      s.input = {
+        aim: null,
+        throttle: 0.65,
+        fire: s.fireIds.size > 0,
+        missile: s.missileIds.size > 0,
+        special: s.specialIds.size > 0,
+      };
     }
     onInput(s.input);
   };
 
   const onStart = (e: GestureResponderEvent) => {
     const s = state.current;
+    const activeTouches = new Map<string, { x: number; y: number }>();
+    for (const t of e.nativeEvent.touches) {
+      activeTouches.set(String(t.identifier), { x: t.pageX, y: t.pageY });
+    }
+
+    // Clean up any stale stickId if that touch is no longer active
+    if (s.stickId !== null && !activeTouches.has(s.stickId)) {
+      s.stickId = null;
+    }
+
     for (const t of e.nativeEvent.changedTouches) {
       const id = String(t.identifier);
       const x = t.pageX;
       const y = t.pageY;
-      if (inCircle(x, y, autoC, AUTO_R)) onToggleAutoFire?.();
-      else if (inCircle(x, y, fireC, FIRE.r)) s.fireIds.add(id);
-      else if (inCircle(x, y, misC, MISSILE.r)) s.missileIds.add(id);
-      else if (inCircle(x, y, spC, SPECIAL_R)) s.specialIds.add(id);
-      else if (s.stickId === null && (isLandscape ? x < width * 0.62 : (x > width * 0.32 || y < height - 190))) {
-        // Dynamic touch-down floating joystick: base spawns immediately under your finger!
-        s.stickId = id;
-        s.base = { x, y };
-        s.knob = { x, y };
+      if (inCircle(x, y, autoC, AUTO_R)) {
+        if (!s.autoToggledIds.has(id)) {
+          s.autoToggledIds.add(id);
+          onToggleAutoFire?.();
+        }
+      } else if (inCircle(x, y, fireC, FIRE.r)) {
+        s.fireIds.add(id);
+      } else if (inCircle(x, y, misC, MISSILE.r)) {
+        s.missileIds.add(id);
+      } else if (inCircle(x, y, spC, SPECIAL_R)) {
+        s.specialIds.add(id);
+      } else {
+        // Clear separation between joystick half and action buttons half
+        const isStickSide = isLandscape ? x < width * 0.55 : x > width * 0.45;
+        if (isStickSide && s.stickId === null) {
+          s.stickId = id;
+          // Spawn base right at touch-down point and KEEP IT ANCHORED during the gesture!
+          s.base = { x, y };
+          s.knob = { x, y };
+        }
       }
     }
     emit();
@@ -157,23 +185,62 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
 
   const onMove = (e: GestureResponderEvent) => {
     const s = state.current;
-    if (s.stickId === null) return;
+    const activeTouches = new Map<string, { x: number; y: number }>();
     for (const t of e.nativeEvent.touches) {
-      if (String(t.identifier) !== s.stickId) continue;
-      const dx = t.pageX - s.base.x;
-      const dy = t.pageY - s.base.y;
-      const d = Math.hypot(dx, dy);
+      activeTouches.set(String(t.identifier), { x: t.pageX, y: t.pageY });
+    }
 
-      // Smooth floating stick: if user drags past stick boundary, slide the base
-      // so reversing direction is instantaneous from wherever the thumb currently is!
-      if (d > STICK_R) {
-        s.base.x = t.pageX - (dx / d) * STICK_R;
-        s.base.y = t.pageY - (dy / d) * STICK_R;
-        s.knob = { x: t.pageX, y: t.pageY };
+    // 1. Process stick touch
+    if (s.stickId !== null) {
+      const stickTouch = activeTouches.get(s.stickId);
+      if (stickTouch) {
+        const dx = stickTouch.x - s.base.x;
+        const dy = stickTouch.y - s.base.y;
+        const d = Math.hypot(dx, dy);
+
+        // Clamped knob with firmly anchored base (NEVER slide the base!)
+        // This ensures 100% predictable steering: reversing direction is instant and doesn't orbit.
+        if (d > STICK_R) {
+          s.knob = {
+            x: s.base.x + (dx / d) * STICK_R,
+            y: s.base.y + (dy / d) * STICK_R,
+          };
+        } else {
+          s.knob = { x: stickTouch.x, y: stickTouch.y };
+        }
       } else {
-        s.knob = { x: t.pageX, y: t.pageY };
+        // Stick touch was lifted
+        s.stickId = null;
+        s.base = { x: defaultBase.x, y: defaultBase.y };
+        s.knob = { x: defaultBase.x, y: defaultBase.y };
       }
     }
+
+    // 2. Synchronize non-stick touches with buttons (handles finger sliding / rolling)
+    for (const [id, pt] of activeTouches.entries()) {
+      if (id === s.stickId) continue;
+      if (inCircle(pt.x, pt.y, fireC, FIRE.r)) {
+        s.fireIds.add(id);
+      } else {
+        s.fireIds.delete(id);
+      }
+      if (inCircle(pt.x, pt.y, misC, MISSILE.r)) {
+        s.missileIds.add(id);
+      } else {
+        s.missileIds.delete(id);
+      }
+      if (inCircle(pt.x, pt.y, spC, SPECIAL_R)) {
+        s.specialIds.add(id);
+      } else {
+        s.specialIds.delete(id);
+      }
+    }
+
+    // Clean up IDs of touches that are no longer on the screen
+    for (const id of s.fireIds) if (!activeTouches.has(id)) s.fireIds.delete(id);
+    for (const id of s.missileIds) if (!activeTouches.has(id)) s.missileIds.delete(id);
+    for (const id of s.specialIds) if (!activeTouches.has(id)) s.specialIds.delete(id);
+
     emit();
     redraw();
   };
@@ -185,17 +252,31 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       s.fireIds.delete(id);
       s.missileIds.delete(id);
       s.specialIds.delete(id);
+      s.autoToggledIds.delete(id);
       if (id === s.stickId) {
         s.stickId = null;
         s.base = { x: defaultBase.x, y: defaultBase.y };
         s.knob = { x: defaultBase.x, y: defaultBase.y };
       }
     }
-    // Safety: if no touches remain, release everything.
+
+    // Comprehensive release safety check against all remaining active touches
+    const remainingTouches = new Set(e.nativeEvent.touches.map((t) => String(t.identifier)));
+    if (s.stickId !== null && !remainingTouches.has(s.stickId)) {
+      s.stickId = null;
+      s.base = { x: defaultBase.x, y: defaultBase.y };
+      s.knob = { x: defaultBase.x, y: defaultBase.y };
+    }
+    for (const id of s.fireIds) if (!remainingTouches.has(id)) s.fireIds.delete(id);
+    for (const id of s.missileIds) if (!remainingTouches.has(id)) s.missileIds.delete(id);
+    for (const id of s.specialIds) if (!remainingTouches.has(id)) s.specialIds.delete(id);
+    for (const id of s.autoToggledIds) if (!remainingTouches.has(id)) s.autoToggledIds.delete(id);
+
     if (e.nativeEvent.touches.length === 0) {
       s.fireIds.clear();
       s.missileIds.clear();
       s.specialIds.clear();
+      s.autoToggledIds.clear();
       s.stickId = null;
       s.base = { x: defaultBase.x, y: defaultBase.y };
       s.knob = { x: defaultBase.x, y: defaultBase.y };
@@ -213,8 +294,8 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       onResponderGrant={onStart}
       onResponderStart={onStart}
       onResponderMove={onMove}
-      onResponderEnd={onEnd}
       onResponderRelease={onEnd}
+      onResponderEnd={onEnd}
       onResponderTerminate={onEnd}
     >
       {/* Dynamic Floating Flight Joystick */}
@@ -272,7 +353,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
           (view.fire || autoFiring) && styles.btnDown,
         ]}
       >
-        <Text style={[styles.btnText, { fontSize: 13 }]}>{autoFiring ? 'LOCKED 🔥' : '💥 CANNON'}</Text>
+        <Text style={[styles.btnText, { fontSize: 13 }]}>{autoFiring ? 'TRACKING' : 'FIRE'}</Text>
       </View>
       {/* Auto-Fire Toggle */}
       <View
@@ -292,10 +373,10 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
         ]}
       >
         <Text style={[styles.btnTextSmall, { fontSize: 10, fontWeight: '900', color: autoFiring ? '#ff4d4d' : autoFire ? '#00f5d4' : 'rgba(255,255,255,0.45)' }]}>
-          {autoFiring ? 'TARGET' : '🎯 AUTO'}
+          {autoFiring ? 'TARGET' : 'AUTO'}
         </Text>
         <Text style={[styles.btnTextSmall, { fontSize: 8, color: autoFiring ? '#ffb703' : autoFire ? '#00f5d4' : 'rgba(255,255,255,0.35)' }]}>
-          {autoFiring ? 'FIRE 🔥' : autoFire ? 'ON' : 'OFF'}
+          {autoFiring ? 'ENGAGED' : autoFire ? 'ON' : 'OFF'}
         </Text>
       </View>
       <View
@@ -315,7 +396,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
         ]}
       >
         <Text style={[styles.btnTextSmall, hasMissileLock && missiles > 0 ? { color: '#ffb703', fontWeight: '900' } : null]}>
-          {hasMissileLock && missiles > 0 ? '🎯 LOCK' : '🚀 MSL'}
+          {hasMissileLock && missiles > 0 ? 'LOCK' : 'MISSILE'}
         </Text>
         <Text style={styles.btnTextSmall}>{missiles}</Text>
       </View>
@@ -331,7 +412,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
           <View style={[styles.cdFill, { height: `${Math.min(100, (specialCd / specialMax) * 100)}%` }]} />
         ) : null}
         <Text style={styles.btnTextSmall}>
-          {specialLabel === 'DASH' ? '⚡ DASH' : specialLabel === 'FLARE' ? '🛡️ FLARE' : '💥 FLAK'}
+          {specialLabel}
         </Text>
         {specialCd > 0 ? <Text style={styles.btnTextSmall}>{Math.ceil(specialCd)}</Text> : null}
       </View>

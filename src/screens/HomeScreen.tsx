@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { go, hostGame, setName, setOrientation, toggleOrientation, toggleSound, toggleVibration, useApp } from '../store/app';
-import { ActionCard, ErrorBanner, Segmented, styles, theme } from './ui';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { go, hostGame, setName, setOrientation, setPlaneType, toggleSound, toggleVibration, useApp } from '../store/app';
+import { ErrorBanner, theme } from './ui';
+import { HangarShowcase, PLANE_LORE } from './HangarShowcase';
+import { MenuBackdrop } from './MenuBackdrop';
+import { playSfx } from '../game/audio';
 
 const COOL_CALLSIGNS = [
   'VIPER', 'MAVERICK', 'GHOST', 'PHANTOM', 'RAPTOR', 'COBRA',
@@ -17,364 +20,790 @@ function randomCallsign(): string {
 
 export function HomeScreen() {
   const name = useApp((s) => s.playerName);
+  const planeType = useApp((s) => s.planeType);
   const error = useApp((s) => s.error);
   const sound = useApp((s) => s.sound);
   const vibration = useApp((s) => s.vibration);
   const orientation = useApp((s) => s.orientation);
   const [busy, setBusy] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const rollCallsign = () => {
+    if (sound) playSfx('pickup', 0.5);
     setName(randomCallsign());
   };
 
+  const switchOrientation = (target: 'portrait' | 'landscape') => {
+    if (sound && target !== orientation) playSfx('special', 0.4);
+    setOrientation(target);
+  };
+
+  const isLandscape = orientation === 'landscape';
+  const activeLore = PLANE_LORE[planeType];
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={localStyles.contentContainer}>
-      {/* Top HUD Controls */}
-      <View style={localStyles.topBar}>
-        <View style={localStyles.statusPill}>
-          <View style={[localStyles.statusDot, { backgroundColor: theme.ok }]} />
-          <Text style={localStyles.statusText}>RADAR READY</Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable
-            onPress={toggleOrientation}
-            style={({ pressed }) => [
-              localStyles.miniToggle,
-              { backgroundColor: orientation === 'landscape' ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.06)' },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Text style={{ fontSize: 13 }}>{orientation === 'landscape' ? '🔄' : '📱'}</Text>
-            <Text style={[localStyles.toggleLabel, { color: orientation === 'landscape' ? theme.cyan : theme.dim }]}>
-              {orientation === 'landscape' ? 'LAND' : 'PORT'}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={toggleSound}
-            style={({ pressed }) => [
-              localStyles.miniToggle,
-              { backgroundColor: sound ? 'rgba(255,210,63,0.15)' : 'rgba(255,255,255,0.06)' },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Text style={{ fontSize: 13 }}>{sound ? '🔊' : '🔇'}</Text>
-            <Text style={[localStyles.toggleLabel, { color: sound ? theme.accent : theme.dim }]}>SFX</Text>
-          </Pressable>
-          <Pressable
-            onPress={toggleVibration}
-            style={({ pressed }) => [
-              localStyles.miniToggle,
-              { backgroundColor: vibration ? 'rgba(0,245,212,0.15)' : 'rgba(255,255,255,0.06)' },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Text style={{ fontSize: 13 }}>{vibration ? '📳' : '📴'}</Text>
-            <Text style={[localStyles.toggleLabel, { color: vibration ? theme.cyan : theme.dim }]}>HAPTIC</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Hero Fighter Banner */}
-      <View style={localStyles.heroSection}>
-        <View style={localStyles.wingsContainer}>
-          <Text style={{ fontSize: 32 }}>⚡ ✈️ ⚡</Text>
-        </View>
-        <Text style={localStyles.gameTitle}>A E R O F I G H T E R</Text>
-        <Text style={localStyles.gameSubtitle}>AIR COMBAT SIMULATOR · LOCAL MULTIPLAYER</Text>
-      </View>
-
-      <ErrorBanner message={error} />
-
-      {/* Callsign / Pilot Station */}
-      <View style={localStyles.callsignCard}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Text style={styles.label}>PILOT CALLSIGN</Text>
-          <Pressable onPress={rollCallsign} style={({ pressed }) => [localStyles.rollBtn, pressed && { opacity: 0.6 }]}>
-            <Text style={localStyles.rollBtnText}>🎲 RANDOM</Text>
-          </Pressable>
-        </View>
-        <View style={localStyles.inputRow}>
-          <View style={localStyles.callsignBadge}>
-            <Text style={{ fontSize: 16 }}>🎖️</Text>
+    <View style={[styles.screen, isLandscape && styles.screenLandscape]}>
+      <MenuBackdrop />
+      {/* Landscape layout: 2 equal columns */}
+      {isLandscape ? (
+        <View style={styles.landscapeRow}>
+          {/* Left Column: Aircraft Hangar Stage */}
+          <View style={styles.landscapeHangarCol}>
+            <HangarShowcase
+              selectedType={planeType}
+              onSelect={setPlaneType}
+              compact={true}
+              style={{ flex: 1 }}
+            />
           </View>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            style={[styles.input, { flex: 1, paddingVertical: 9 }]}
-            maxLength={16}
-            placeholder="CALLSIGN (e.g. VIPER-07)"
-            placeholderTextColor={theme.dim}
-            autoCapitalize="characters"
-          />
-        </View>
-      </View>
 
-      {/* Screen Orientation Settings Menu */}
-      <View style={localStyles.settingsCard}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Text style={styles.label}>SCREEN ORIENTATION</Text>
-          <Text style={[styles.dim, { fontSize: 11 }]}>
-            {orientation === 'landscape' ? 'HORIZONTAL COCKPIT' : 'VERTICAL DUAL-THUMB'}
-          </Text>
-        </View>
-        <Segmented
-          value={orientation}
-          onChange={(o) => setOrientation(o as 'portrait' | 'landscape')}
-          options={[
-            { value: 'portrait', label: '📱 PORTRAIT' },
-            { value: 'landscape', label: '🔄 LANDSCAPE', color: theme.cyan },
-          ]}
-        />
-      </View>
+          {/* Right Column: Title, Profile, Controls, and Action Deck */}
+          <View style={styles.landscapeMenuCol}>
+            {/* Top Bar */}
+            <View style={styles.topBar}>
+              <View>
+                <View style={styles.titleRow}>
+                  <View style={styles.titlePip} />
+                  <Text style={styles.gameTitleSmall}>AEROFIGHER</Text>
+                </View>
+                <Text style={styles.gameSubtitleSmall}>AIRBASE ALPHA // TACTICAL DOGFIGHT</Text>
+              </View>
 
-      {/* Main Mission Cards */}
-      <View style={{ gap: 12 }}>
-        <ActionCard
-          title="SOLO DOGFIGHT"
-          badge="OFFLINE"
-          badgeColor={theme.accent}
-          description="Engage rogue AI bot squadrons with customizable bot difficulty"
-          icon="🎯"
-          accentColor={theme.accent}
-          onPress={() => go('solo')}
-          ctaText="FLY SOLO ›"
-        />
+              <View style={styles.topPillRow}>
+                <Pressable
+                  onPress={() => switchOrientation('portrait')}
+                  style={({ pressed }) => [styles.pillBtn, styles.pillBtnCyan, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.pillBtnTextCyan}>PORTRAIT</Text>
+                </Pressable>
 
-        <ActionCard
-          title="HOST SQUADRON"
-          badge="CREATE ROOM"
-          badgeColor={theme.cyan}
-          description="Host local dogfight room over your phone hotspot for nearby pilots"
-          icon="📡"
-          accentColor={theme.cyan}
-          busy={busy}
-          disabled={busy || !name.trim()}
-          onPress={async () => {
-            setBusy(true);
-            try {
-              await hostGame();
-            } finally {
-              setBusy(false);
-            }
-          }}
-          ctaText="HOST ROOM ›"
-        />
+                <Pressable
+                  onPress={toggleSound}
+                  style={({ pressed }) => [styles.pillBtn, sound ? styles.pillBtnAccent : styles.pillBtnDim, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={sound ? styles.pillBtnTextAccent : styles.pillBtnTextDim}>SFX {sound ? 'ON' : 'OFF'}</Text>
+                </Pressable>
 
-        <ActionCard
-          title="JOIN SQUADRON"
-          badge="RADAR SCAN"
-          badgeColor={theme.ok}
-          description="Scan hotspot network or connect with 1-tap direct IP"
-          icon="🚀"
-          accentColor={theme.ok}
-          disabled={!name.trim()}
-          onPress={() => go('join')}
-          ctaText="FIND SQUAD ›"
-        />
-      </View>
+                <Pressable
+                  onPress={toggleVibration}
+                  style={({ pressed }) => [styles.pillBtn, vibration ? styles.pillBtnCyan : styles.pillBtnDim, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={vibration ? styles.pillBtnTextCyan : styles.pillBtnTextDim}>VIB {vibration ? 'ON' : 'OFF'}</Text>
+                </Pressable>
 
-      {/* How To Play Infographic */}
-      <View style={localStyles.howToBox}>
-        <Text style={[styles.label, { marginBottom: 10, textAlign: 'center' }]}>HOTSPOT DOGFIGHT INSTRUCTIONS</Text>
-        <View style={localStyles.stepGrid}>
-          <View style={localStyles.stepCol}>
-            <View style={localStyles.stepCircle}>
-              <Text style={localStyles.stepNumber}>1</Text>
+                <Pressable
+                  onPress={() => setShowGuide(true)}
+                  style={({ pressed }) => [styles.pillBtn, styles.pillBtnDim, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.pillBtnTextDim}>GUIDE</Text>
+                </Pressable>
+              </View>
             </View>
-            <Text style={localStyles.stepTitle}>HOTSPOT ON</Text>
-            <Text style={localStyles.stepDesc}>Host enables phone’s hotspot</Text>
-          </View>
-          <View style={localStyles.stepArrow}>
-            <Text style={{ color: theme.dim, fontSize: 16 }}>➔</Text>
-          </View>
-          <View style={localStyles.stepCol}>
-            <View style={localStyles.stepCircle}>
-              <Text style={localStyles.stepNumber}>2</Text>
+
+            <ErrorBanner message={error} />
+
+            {/* Callsign Strip */}
+            <View style={styles.callsignStrip}>
+              <View style={[styles.wingBadge, { borderColor: activeLore.color }]}>
+                <Text style={[styles.wingBadgeText, { color: activeLore.color }]}>{activeLore.code}</Text>
+              </View>
+              <Text style={styles.callsignLabel}>CALLSIGN:</Text>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                style={styles.callsignInput}
+                maxLength={16}
+                placeholder="CALLSIGN"
+                placeholderTextColor={theme.dim}
+                autoCapitalize="characters"
+              />
+              <Pressable onPress={rollCallsign} style={({ pressed }) => [styles.rerollBtn, pressed && { opacity: 0.6 }]}>
+                <Text style={styles.rerollText}>REROLL</Text>
+              </Pressable>
             </View>
-            <Text style={localStyles.stepTitle}>SQUAD JOINS</Text>
-            <Text style={localStyles.stepDesc}>Friends connect to Wi-Fi</Text>
-          </View>
-          <View style={localStyles.stepArrow}>
-            <Text style={{ color: theme.dim, fontSize: 16 }}>➔</Text>
-          </View>
-          <View style={localStyles.stepCol}>
-            <View style={[localStyles.stepCircle, { borderColor: theme.accent }]}>
-              <Text style={[localStyles.stepNumber, { color: theme.accent }]}>3</Text>
+
+            {/* Compact Tactical Telemetry Strip */}
+            <View style={styles.telemetryStrip}>
+              <View style={styles.telemetryItem}>
+                <Text style={styles.telemetryVal}>9</Text>
+                <Text style={styles.telemetryLbl}>AIRSPACES</Text>
+              </View>
+              <View style={styles.telemetryDiv} />
+              <View style={styles.telemetryItem}>
+                <Text style={styles.telemetryVal}>FFA / TDM / CTF</Text>
+                <Text style={styles.telemetryLbl}>COMBAT MODES</Text>
+              </View>
+              <View style={styles.telemetryDiv} />
+              <View style={styles.telemetryItem}>
+                <Text style={[styles.telemetryVal, { color: '#00f5d4' }]}>ONLINE</Text>
+                <Text style={styles.telemetryLbl}>LAN RADAR</Text>
+              </View>
             </View>
-            <Text style={[localStyles.stepTitle, { color: theme.accent }]}>DOGFIGHT!</Text>
-            <Text style={localStyles.stepDesc}>Host: Host, Squad: Join</Text>
+
+            {/* Action Buttons */}
+            <View style={styles.actionGroup}>
+              <Pressable
+                onPress={() => {
+                  if (sound) playSfx('shoot', 0.4);
+                  go('solo');
+                }}
+                style={({ pressed }) => [styles.btnPrimary, pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }]}
+              >
+                <View style={styles.btnRow}>
+                  <View>
+                    <Text style={styles.btnPrimaryText}>SOLO DOGFIGHT</Text>
+                    <Text style={styles.btnPrimarySub}>INSTANT SCRAMBLE • AI SQUADRONS</Text>
+                  </View>
+                  <Text style={styles.btnPrimaryBadge}>LAUNCH ›</Text>
+                </View>
+              </Pressable>
+
+              <View style={styles.dualBtnRow}>
+                <Pressable
+                  onPress={async () => {
+                    if (sound) playSfx('shoot', 0.4);
+                    setBusy(true);
+                    try {
+                      await hostGame();
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  disabled={busy || !name.trim()}
+                  style={({ pressed }) => [
+                    styles.btnCyan,
+                    (busy || !name.trim()) && { opacity: 0.4 },
+                    pressed && { transform: [{ scale: 0.98 }], opacity: 0.8 },
+                  ]}
+                >
+                  <Text style={styles.btnCyanText}>{busy ? 'BROADCASTING...' : 'HOST SQUADRON'}</Text>
+                  <Text style={styles.btnSubText}>CREATE HOTSPOT ROOM</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    if (sound) playSfx('shoot', 0.4);
+                    go('join');
+                  }}
+                  disabled={!name.trim()}
+                  style={({ pressed }) => [
+                    styles.btnEmerald,
+                    !name.trim() && { opacity: 0.4 },
+                    pressed && { transform: [{ scale: 0.98 }], opacity: 0.8 },
+                  ]}
+                >
+                  <Text style={styles.btnEmeraldText}>JOIN SQUADRON</Text>
+                  <Text style={styles.btnSubText}>SCAN LOCAL WIFI</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
         </View>
-      </View>
-    </ScrollView>
+      ) : (
+        /* Portrait layout: 100% viewport single screen */
+        <View style={styles.portraitRoot}>
+          {/* Top Header Bar */}
+          <View style={styles.topBar}>
+            <View>
+              <View style={styles.titleRow}>
+                <View style={styles.titlePip} />
+                <Text style={styles.gameTitle}>AEROFIGHER</Text>
+              </View>
+              <Text style={styles.gameSubtitle}>AIRBASE ALPHA // SUPERSONIC DOGFIGHT</Text>
+            </View>
+
+            <View style={styles.topPillRow}>
+              <Pressable
+                onPress={() => switchOrientation('landscape')}
+                style={({ pressed }) => [styles.pillBtn, styles.pillBtnCyan, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={styles.pillBtnTextCyan}>LANDSCAPE</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={toggleSound}
+                style={({ pressed }) => [styles.pillBtn, sound ? styles.pillBtnAccent : styles.pillBtnDim, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={sound ? styles.pillBtnTextAccent : styles.pillBtnTextDim}>SFX {sound ? 'ON' : 'OFF'}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={toggleVibration}
+                style={({ pressed }) => [styles.pillBtn, vibration ? styles.pillBtnCyan : styles.pillBtnDim, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={vibration ? styles.pillBtnTextCyan : styles.pillBtnTextDim}>VIB {vibration ? 'ON' : 'OFF'}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setShowGuide(true)}
+                style={({ pressed }) => [styles.pillBtn, styles.pillBtnDim, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={styles.pillBtnTextDim}>GUIDE</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <ErrorBanner message={error} />
+
+          {/* Pilot Callsign Bar */}
+          <View style={styles.callsignStrip}>
+            <View style={[styles.wingBadge, { borderColor: activeLore.color }]}>
+              <Text style={[styles.wingBadgeText, { color: activeLore.color }]}>{activeLore.code}</Text>
+            </View>
+            <Text style={styles.callsignLabel}>PILOT:</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              style={styles.callsignInput}
+              maxLength={16}
+              placeholder="CALLSIGN (e.g. VIPER-07)"
+              placeholderTextColor={theme.dim}
+              autoCapitalize="characters"
+            />
+            <Pressable onPress={rollCallsign} style={({ pressed }) => [styles.rerollBtn, pressed && { opacity: 0.6 }]}>
+              <Text style={styles.rerollText}>REROLL</Text>
+            </Pressable>
+            <View style={styles.statusPill}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>READY</Text>
+            </View>
+          </View>
+
+          {/* Compact Tactical Telemetry Strip */}
+          <View style={styles.telemetryStrip}>
+            <View style={styles.telemetryItem}>
+              <Text style={styles.telemetryVal}>9 SECTORS</Text>
+              <Text style={styles.telemetryLbl}>AIRSPACE</Text>
+            </View>
+            <View style={styles.telemetryDiv} />
+            <View style={styles.telemetryItem}>
+              <Text style={styles.telemetryVal}>FFA / TDM / CTF</Text>
+              <Text style={styles.telemetryLbl}>MODES</Text>
+            </View>
+            <View style={styles.telemetryDiv} />
+            <View style={styles.telemetryItem}>
+              <Text style={[styles.telemetryVal, { color: '#00f5d4' }]}>HOTSPOT LAN</Text>
+              <Text style={styles.telemetryLbl}>MULTIPLAYER</Text>
+            </View>
+          </View>
+
+          {/* Central Hangar Stage (Fills available space) */}
+          <View style={styles.portraitHangarWrap}>
+            <HangarShowcase
+              selectedType={planeType}
+              onSelect={setPlaneType}
+              compact={false}
+              style={{ flex: 1 }}
+            />
+          </View>
+
+          {/* Action Command Deck */}
+          <View style={styles.actionGroup}>
+            <Pressable
+              onPress={() => {
+                if (sound) playSfx('shoot', 0.4);
+                go('solo');
+              }}
+              style={({ pressed }) => [styles.btnPrimary, pressed && { transform: [{ scale: 0.98 }], opacity: 0.9 }]}
+            >
+              <View style={styles.btnRow}>
+                <View>
+                  <Text style={styles.btnPrimaryText}>SOLO DOGFIGHT</Text>
+                  <Text style={styles.btnPrimarySub}>INSTANT SCRAMBLE • AI SQUADRONS • 9 MAPS</Text>
+                </View>
+                <View style={styles.launchPill}>
+                  <Text style={styles.btnPrimaryBadge}>SCRAMBLE ›</Text>
+                </View>
+              </View>
+            </Pressable>
+
+            <View style={styles.dualBtnRow}>
+              <Pressable
+                onPress={async () => {
+                  if (sound) playSfx('shoot', 0.4);
+                  setBusy(true);
+                  try {
+                    await hostGame();
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                disabled={busy || !name.trim()}
+                style={({ pressed }) => [
+                  styles.btnCyan,
+                  (busy || !name.trim()) && { opacity: 0.4 },
+                  pressed && { transform: [{ scale: 0.98 }], opacity: 0.8 },
+                ]}
+              >
+                <Text style={styles.btnCyanText}>{busy ? 'BROADCASTING...' : 'HOST SQUADRON'}</Text>
+                <Text style={styles.btnSubText}>CREATE LAN ROOM</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  if (sound) playSfx('shoot', 0.4);
+                  go('join');
+                }}
+                disabled={!name.trim()}
+                style={({ pressed }) => [
+                  styles.btnEmerald,
+                  !name.trim() && { opacity: 0.4 },
+                  pressed && { transform: [{ scale: 0.98 }], opacity: 0.8 },
+                ]}
+              >
+                <Text style={styles.btnEmeraldText}>JOIN SQUADRON</Text>
+                <Text style={styles.btnSubText}>SCAN HOTSPOT</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Clean Tactical Multiplayer Instructions Modal */}
+      <Modal visible={showGuide} transparent animationType="fade" onRequestClose={() => setShowGuide(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>HOTSPOT MULTIPLAYER GUIDE</Text>
+              <Pressable onPress={() => setShowGuide(false)} hitSlop={10}>
+                <Text style={styles.modalCloseText}>[X]</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.guideStepRow}>
+              <View style={styles.guideNumBadge}>
+                <Text style={styles.guideNumText}>01</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.guideStepTitle}>HOST TURNS ON HOTSPOT</Text>
+                <Text style={styles.guideStepDesc}>Enable Wi-Fi hotspot in your phone settings. No internet or mobile data required.</Text>
+              </View>
+            </View>
+
+            <View style={styles.guideStepRow}>
+              <View style={styles.guideNumBadge}>
+                <Text style={styles.guideNumText}>02</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.guideStepTitle}>SQUAD MATES CONNECT</Text>
+                <Text style={styles.guideStepDesc}>Other pilots connect their phones to the host’s Wi-Fi hotspot.</Text>
+              </View>
+            </View>
+
+            <View style={styles.guideStepRow}>
+              <View style={[styles.guideNumBadge, { borderColor: theme.accent }]}>
+                <Text style={[styles.guideNumText, { color: theme.accent }]}>03</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.guideStepTitle, { color: theme.accent }]}>SCRAMBLE INTO BATTLE</Text>
+                <Text style={styles.guideStepDesc}>Host taps HOST SQUADRON. Other pilots tap JOIN SQUADRON to auto-scan and dogfight!</Text>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => setShowGuide(false)}
+              style={({ pressed }) => [styles.modalConfirmBtn, pressed && { opacity: 0.8 }]}
+            >
+              <Text style={styles.modalConfirmText}>ACKNOWLEDGE</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
-const localStyles = StyleSheet.create({
-  contentContainer: {
-    paddingBottom: 40,
-    gap: 16,
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#040914',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 10,
+  },
+  screenLandscape: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  portraitRoot: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  landscapeRow: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  landscapeHangarCol: {
+    flex: 1.15,
+  },
+  landscapeMenuCol: {
+    flex: 1,
+    justifyContent: 'space-between',
   },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  titlePip: {
+    width: 4,
+    height: 16,
+    borderRadius: 2,
+    backgroundColor: '#ffd23f',
+  },
+  gameTitle: {
+    color: '#ffd23f',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 2.5,
+  },
+  gameSubtitle: {
+    color: '#94a3b8',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  gameTitleSmall: {
+    color: '#ffd23f',
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  gameSubtitleSmall: {
+    color: '#94a3b8',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  topPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  pillBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  pillBtnCyan: {
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+  },
+  pillBtnAccent: {
+    backgroundColor: 'rgba(255, 210, 63, 0.14)',
+    borderColor: 'rgba(255, 210, 63, 0.45)',
+  },
+  pillBtnDim: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  pillBtnTextCyan: {
+    color: '#00e5ff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  pillBtnTextAccent: {
+    color: '#ffd23f',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  pillBtnTextDim: {
+    color: '#94a3b8',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  callsignStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(7, 18, 36, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.28)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 8,
+    marginBottom: 6,
+  },
+  wingBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  wingBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  telemetryStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: 'rgba(7, 18, 36, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.18)',
+    borderRadius: 8,
     paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 4,
+  },
+  telemetryItem: {
+    alignItems: 'center',
+  },
+  telemetryVal: {
+    color: '#ffd23f',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  telemetryLbl: {
+    color: '#64748b',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginTop: 1,
+  },
+  telemetryDiv: {
+    width: 1,
+    height: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  callsignLabel: {
+    color: '#00e5ff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  callsignInput: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    paddingVertical: 2,
+  },
+  rerollBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  rerollText: {
+    color: '#cbd5e1',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    backgroundColor: 'rgba(16,185,129,0.12)',
+    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0, 245, 212, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.35)',
+    borderColor: 'rgba(0, 245, 212, 0.3)',
   },
   statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00f5d4',
   },
   statusText: {
-    color: theme.ok,
-    fontSize: 10,
+    color: '#00f5d4',
+    fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
   },
-  miniToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  portraitHangarWrap: {
+    flex: 1,
+    marginVertical: 4,
+  },
+  actionGroup: {
+    gap: 6,
+    marginTop: 4,
+  },
+  btnPrimary: {
+    backgroundColor: '#ffd23f',
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  toggleLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  heroSection: {
-    alignItems: 'center',
     paddingVertical: 12,
-  },
-  wingsContainer: {
-    marginBottom: 6,
-  },
-  gameTitle: {
-    color: theme.accent,
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: 4,
-    textAlign: 'center',
-    textShadowColor: 'rgba(255,210,63,0.4)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 10,
-  },
-  gameSubtitle: {
-    color: theme.dim,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  callsignCard: {
-    backgroundColor: theme.panel,
-    borderRadius: 14,
-    padding: 14,
+    paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: theme.panelBorder,
+    borderColor: '#ffe58f',
+    shadowColor: '#ffd23f',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
-  settingsCard: {
-    backgroundColor: theme.panel,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: theme.panelBorder,
-  },
-  rollBtn: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  rollBtnText: {
-    color: theme.cyan,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  callsignBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderWidth: 1,
-    borderColor: theme.panelBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  howToBox: {
-    backgroundColor: 'rgba(11,23,42,0.85)',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginTop: 4,
-  },
-  stepGrid: {
+  btnRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  stepCol: {
-    flex: 1,
-    alignItems: 'center',
+  btnPrimaryText: {
+    color: '#040d1a',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
-  stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: theme.cyan,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  btnPrimarySub: {
+    color: 'rgba(4, 13, 26, 0.72)',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginTop: 1,
+  },
+  launchPill: {
+    backgroundColor: 'rgba(4, 13, 26, 0.14)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  btnPrimaryBadge: {
+    color: '#040d1a',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  dualBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  btnCyan: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 229, 255, 0.14)',
+    borderRadius: 8,
+    borderWidth: 1.2,
+    borderColor: '#00e5ff',
+    paddingVertical: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
-  stepNumber: {
-    color: theme.cyan,
+  btnCyanText: {
+    color: '#00e5ff',
     fontSize: 12,
     fontWeight: '900',
+    letterSpacing: 1,
   },
-  stepTitle: {
-    color: theme.text,
-    fontSize: 10,
+  btnEmerald: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 245, 212, 0.14)',
+    borderRadius: 8,
+    borderWidth: 1.2,
+    borderColor: '#00f5d4',
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnEmeraldText: {
+    color: '#00f5d4',
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 0.5,
-    textAlign: 'center',
+    letterSpacing: 1,
+  },
+  btnSubText: {
+    color: '#94a3b8',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginTop: 2,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalBox: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#071224',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#00e5ff',
+    padding: 18,
+    gap: 14,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    paddingBottom: 10,
+  },
+  modalTitle: {
+    color: '#00e5ff',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  modalCloseText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  guideStepRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  guideNumBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#00e5ff',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideNumText: {
+    color: '#00e5ff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  guideStepTitle: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
     marginBottom: 2,
   },
-  stepDesc: {
-    color: theme.dim,
-    fontSize: 9,
-    textAlign: 'center',
-    lineHeight: 12,
+  guideStepDesc: {
+    color: '#94a3b8',
+    fontSize: 11,
+    lineHeight: 15,
   },
-  stepArrow: {
-    paddingHorizontal: 2,
-    marginBottom: 16,
+  modalConfirmBtn: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: '#00e5ff',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  modalConfirmText: {
+    color: '#00e5ff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 });

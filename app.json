@@ -3,7 +3,7 @@
     "name": "AeroFighter",
     "slug": "aerofighter",
     "scheme": "aerofighter",
-    "version": "1.0.9",
+    "version": "1.0.24",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.aerofighter.game",
-      "versionCode": 10,
+      "versionCode": 25,
       "adaptiveIcon": {
         "backgroundColor": "#070f1e",
         "foregroundImage": "./assets/android-icon-foreground.png",

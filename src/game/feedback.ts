@@ -44,6 +44,10 @@ export class Feedback {
       switch (e.t) {
         case 'explode':
           this.sfx('explode', (e.big ? 1 : 0.6) * fade(e.x, e.y));
+          if (e.ground) {
+            const pFade = fade(e.x, e.y);
+            if (pFade > 0.2) this.vib(Math.round(85 * pFade));
+          }
           break;
         case 'hit':
           if (me && Math.hypot(e.x - me.x, e.y - me.y) < 60) this.sfx('hit', 0.8);

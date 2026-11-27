@@ -104,12 +104,12 @@ export function startSolo(opts: SoloOptions) {
     botDifficulty: opts.difficulty ?? 'medium',
   });
   const slots: PlayerSlot[] = [{ id: 'me', name: playerName, team: 0, type: planeType, isBot: false }];
-  const types: PlaneType[] = ['fighter', 'interceptor', 'bomber'];
+  const types: PlaneType[] = ['fighter', 'interceptor', 'bomber', 'stealth', 'gunship'];
   const names = ['Viper', 'Falcon', 'Ghost', 'Raptor', 'Hawk', 'Talon', 'Blaze'];
   for (let i = 0; i < opts.bots; i++) {
     const t0 = slots.filter((s) => s.team === 0).length;
     const t1 = slots.filter((s) => s.team === 1).length;
-    slots.push({ id: 'bot' + i, name: 'Bot ' + names[i % names.length], team: t0 <= t1 ? 0 : 1, type: types[i % 3], isBot: true });
+    slots.push({ id: 'bot' + i, name: 'Bot ' + names[i % names.length], team: t0 <= t1 ? 0 : 1, type: types[i % types.length], isBot: true });
   }
   set({ session: new LocalSession('me', config, slots, newSeed()), screen: 'game', results: null });
 }
