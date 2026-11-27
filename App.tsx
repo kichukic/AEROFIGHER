@@ -17,8 +17,22 @@ export default function App() {
   const screen = useApp((s) => s.screen);
 
   useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
     initAudio().catch(() => {});
+
+    // Sync initial device orientation if held horizontally
+    ScreenOrientation.getOrientationAsync().then((o) => {
+      const isLand = o === ScreenOrientation.Orientation.LANDSCAPE_LEFT || o === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
+      if (isLand) useApp.setState({ orientation: 'landscape' });
+    }).catch(() => {});
+
+    const sub = ScreenOrientation.addOrientationChangeListener((evt) => {
+      const o = evt.orientationInfo.orientation;
+      const isLand = o === ScreenOrientation.Orientation.LANDSCAPE_LEFT || o === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
+      useApp.setState({ orientation: isLand ? 'landscape' : 'portrait' });
+    });
+    return () => {
+      ScreenOrientation.removeOrientationChangeListener(sub);
+    };
   }, []);
 
   // Android back button: step back sensibly instead of exiting the app.

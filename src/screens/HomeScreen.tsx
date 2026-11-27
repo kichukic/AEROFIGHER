@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { go, hostGame, setName, toggleSound, toggleVibration, useApp } from '../store/app';
+import { go, hostGame, setName, toggleOrientation, toggleSound, toggleVibration, useApp } from '../store/app';
 import { ActionCard, ErrorBanner, styles, theme } from './ui';
 
 const COOL_CALLSIGNS = [
@@ -20,6 +20,7 @@ export function HomeScreen() {
   const error = useApp((s) => s.error);
   const sound = useApp((s) => s.sound);
   const vibration = useApp((s) => s.vibration);
+  const orientation = useApp((s) => s.orientation);
   const [busy, setBusy] = useState(false);
 
   const rollCallsign = () => {
@@ -35,6 +36,19 @@ export function HomeScreen() {
           <Text style={localStyles.statusText}>RADAR READY</Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable
+            onPress={toggleOrientation}
+            style={({ pressed }) => [
+              localStyles.miniToggle,
+              { backgroundColor: orientation === 'landscape' ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.06)' },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text style={{ fontSize: 13 }}>{orientation === 'landscape' ? '🔄' : '📱'}</Text>
+            <Text style={[localStyles.toggleLabel, { color: orientation === 'landscape' ? theme.cyan : theme.dim }]}>
+              {orientation === 'landscape' ? 'LAND' : 'PORT'}
+            </Text>
+          </Pressable>
           <Pressable
             onPress={toggleSound}
             style={({ pressed }) => [

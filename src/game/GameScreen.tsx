@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Canvas, createPicture, Picture, SkPicture } from '@shopify/react-native-skia';
 import { useKeepAwake } from 'expo-keep-awake';
-import { finishMatch, leaveToHome, useApp } from '../store/app';
+import { finishMatch, leaveToHome, toggleOrientation, useApp } from '../store/app';
 import { GameEvent, IDLE_INPUT, Input } from '../sim/types';
 import { SPECIALS } from '../sim/planes';
 import { Controls } from './Controls';
@@ -18,6 +18,7 @@ export function GameScreen() {
   const session = useApp((s) => s.session);
   const sound = useApp((s) => s.sound);
   const vibration = useApp((s) => s.vibration);
+  const orientation = useApp((s) => s.orientation);
   const inputRef = useRef<Input>(IDLE_INPUT);
   const { width, height } = useWindowDimensions();
   const [picture, setPicture] = useState<SkPicture | null>(null);
@@ -213,6 +214,9 @@ export function GameScreen() {
       <Pressable onPress={() => setConfirmLeave(true)} style={styles.menuBtn} hitSlop={10}>
         <Text style={styles.menuText}>II</Text>
       </Pressable>
+      <Pressable onPress={toggleOrientation} style={[styles.menuBtn, { left: 54 }]} hitSlop={10}>
+        <Text style={{ fontSize: 16 }}>{orientation === 'landscape' ? '📱' : '🔄'}</Text>
+      </Pressable>
       {confirmLeave ? (
         <View style={styles.overlay}>
           <View style={styles.dialog}>
@@ -227,6 +231,14 @@ export function GameScreen() {
                 <Text style={styles.dialogBtnText}>LEAVE</Text>
               </Pressable>
             </View>
+            <Pressable
+              style={[styles.dialogBtn, { backgroundColor: 'rgba(0, 229, 255, 0.2)', borderWidth: 1, borderColor: '#00e5ff', marginTop: 12, width: '100%', alignItems: 'center' }]}
+              onPress={toggleOrientation}
+            >
+              <Text style={[styles.dialogBtnText, { color: '#00e5ff' }]}>
+                {orientation === 'landscape' ? '📱 SWITCH TO PORTRAIT' : '🔄 SWITCH TO LANDSCAPE'}
+              </Text>
+            </Pressable>
             {session.kind !== 'solo' ? <Text style={styles.dialogNote}>The game keeps running while this is open.</Text> : null}
           </View>
         </View>

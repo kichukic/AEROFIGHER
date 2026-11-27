@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GestureResponderEvent, StyleSheet, Text, View } from 'react-native';
 import { Input } from '../sim/types';
 
@@ -28,8 +28,14 @@ interface Props {
  *  - Left side: FIRE (hold), MISSILE, and SPECIAL buttons.
  */
 export function Controls({ width, height, onInput, missiles, specialLabel, specialCd, specialMax, autoFire = true, autoFiring = false, onToggleAutoFire, hasMissileLock = false }: Props) {
-  // Default resting position when idle
-  const defaultBase = { x: width - 105, y: height - 120 };
+  const isLandscape = width > height;
+
+  // Default resting position when idle:
+  // In landscape: Left side of screen for left thumb
+  // In portrait: Right side of screen for right thumb
+  const defaultBase = isLandscape
+    ? { x: 120, y: height - 105 }
+    : { x: width - 105, y: height - 120 };
 
   const state = useRef({
     stickId: null as string | null,
@@ -75,11 +81,24 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
     });
   };
 
-  // Left thumb cluster, bottom-left: FIRE in the corner, MISSILE to its right, SPECIAL above it.
-  const fireC = { x: FIRE.side + FIRE.r, y: height - FIRE.bottom - FIRE.r };
-  const misC = { x: fireC.x + 108, y: fireC.y + 14 };
-  const spC = { x: fireC.x + 6, y: fireC.y - 108 };
-  const autoC = { x: fireC.x + 94, y: fireC.y - 72 };
+  // Keep joystick base anchored to new orientation default when idle
+  useEffect(() => {
+    if (state.current.stickId === null) {
+      state.current.base = { x: defaultBase.x, y: defaultBase.y };
+      state.current.knob = { x: defaultBase.x, y: defaultBase.y };
+      redraw();
+    }
+  }, [defaultBase.x, defaultBase.y]);
+
+  // Button cluster layout:
+  // In landscape: cluster is on the bottom-right for right thumb!
+  // In portrait: cluster is on the bottom-left for left thumb!
+  const fireC = isLandscape
+    ? { x: width - FIRE.side - FIRE.r - 20, y: height - FIRE.bottom - FIRE.r + 10 }
+    : { x: FIRE.side + FIRE.r, y: height - FIRE.bottom - FIRE.r };
+  const misC = isLandscape ? { x: fireC.x - 108, y: fireC.y + 12 } : { x: fireC.x + 108, y: fireC.y + 14 };
+  const spC = isLandscape ? { x: fireC.x - 8, y: fireC.y - 104 } : { x: fireC.x + 6, y: fireC.y - 108 };
+  const autoC = isLandscape ? { x: fireC.x - 94, y: fireC.y - 68 } : { x: fireC.x + 94, y: fireC.y - 72 };
   const inCircle = (x: number, y: number, c: { x: number; y: number }, r: number) => (x - c.x) ** 2 + (y - c.y) ** 2 <= (r + 18) ** 2;
 
   const emit = () => {
@@ -95,7 +114,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
         const curvedMag = Math.pow(norm, 1.25);
         s.input = {
           aim: Math.atan2(dy, dx),
-          throttle: 0.55 + 0.45 * curvedMag,
+          throttle: 0.50 + 0.45 * curvedMag,
           fire: s.fireIds.size > 0,
           missile: s.missileIds.size > 0,
           special: s.specialIds.size > 0,
@@ -125,7 +144,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       else if (inCircle(x, y, fireC, FIRE.r)) s.fireIds.add(id);
       else if (inCircle(x, y, misC, MISSILE.r)) s.missileIds.add(id);
       else if (inCircle(x, y, spC, SPECIAL_R)) s.specialIds.add(id);
-      else if (s.stickId === null && (x > width * 0.32 || y < height - 190)) {
+      else if (s.stickId === null && (isLandscape ? x < width * 0.62 : (x > width * 0.32 || y < height - 190))) {
         // Dynamic touch-down floating joystick: base spawns immediately under your finger!
         s.stickId = id;
         s.base = { x, y };

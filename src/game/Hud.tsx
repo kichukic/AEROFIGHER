@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { PLANES } from '../sim/planes';
 import { isTeamMode, Weapon } from '../sim/types';
 import { GameSession } from './session';
@@ -29,6 +29,8 @@ export interface AccoladeItem {
 
 /** Text overlay; re-rendered ~10x/second via `tick`. */
 export function Hud({ session, feed, accolade }: { session: GameSession; feed: KillFeedItem[]; tick: number; accolade?: AccoladeItem | null }) {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const w = session.world;
   const me = w.planes.find((p) => p.id === session.myId);
   const stats = me ? PLANES[me.type] : null;
@@ -85,7 +87,7 @@ export function Hud({ session, feed, accolade }: { session: GameSession; feed: K
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {/* Top-left: health & tactical telemetry */}
       {me && stats ? (
-        <View style={styles.status}>
+        <View style={[styles.status, isLandscape && styles.statusLandscape]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Text style={styles.statusLabel}>[ TAC // {stats.label.toUpperCase()} ]</Text>
             {me.streak >= 2 ? (
@@ -113,14 +115,14 @@ export function Hud({ session, feed, accolade }: { session: GameSession; feed: K
         </View>
       ) : null}
 
-      {/* Under the health bar: timer + score */}
-      <View style={styles.top}>
+      {/* Under/next to health bar: timer + score */}
+      <View style={[styles.top, isLandscape && styles.topLandscape]}>
         <Text style={styles.timer}>{fmtTime(remaining)}</Text>
         {score}
       </View>
 
       {/* Right: kill feed (under minimap) */}
-      <View style={styles.feed}>
+      <View style={[styles.feed, isLandscape && styles.feedLandscape]}>
         {feed.map((f) => (
           <Text key={f.key} style={[styles.feedItem, f.mine && styles.feedMine]}>
             {f.text ?? (f.killer ? `${f.killer} ${WEAPON_ICON[f.weapon]} ${f.victim}` : `${f.victim} ${WEAPON_ICON[f.weapon]}`)}
@@ -163,7 +165,8 @@ const shadow = { textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 3, textSh
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
-  status: { position: 'absolute', top: 10, left: 58, width: 150 },
+  status: { position: 'absolute', top: 10, left: 98, width: 145 },
+  statusLandscape: { top: 8, left: 98, width: 145 },
   statusLabel: { color: 'white', fontWeight: '900', fontSize: 12, ...shadow },
   statusSmall: { color: 'white', fontWeight: '700', fontSize: 11, marginTop: 3, ...shadow },
   hpBar: { height: 10, borderRadius: 5, backgroundColor: 'rgba(5, 12, 24, 0.75)', borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.35)', marginTop: 3, overflow: 'hidden', position: 'relative' },
@@ -172,12 +175,14 @@ const styles = StyleSheet.create({
   comboBadge: { backgroundColor: 'rgba(255, 183, 3, 0.25)', borderColor: '#ffb703', borderWidth: 1, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
   comboText: { color: '#ffb703', fontWeight: '900', fontSize: 10, letterSpacing: 0.8 },
   tag: { color: '#04111d', fontSize: 10, fontWeight: '900', paddingHorizontal: 5, borderRadius: 4, marginRight: 4, marginTop: 3, overflow: 'hidden' },
-  top: { position: 'absolute', top: 68, left: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  top: { position: 'absolute', top: 68, left: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  topLandscape: { top: 8, left: 255, flexDirection: 'row', alignItems: 'center', gap: 12 },
   timer: { color: '#00e5ff', fontSize: 22, fontWeight: '900', letterSpacing: 1.2, ...shadow },
   score: { fontSize: 22, fontWeight: '900', ...shadow },
   scoreSep: { color: 'white', fontSize: 20, fontWeight: '900', ...shadow },
   scoreSmall: { color: '#e0e6ed', fontSize: 13, fontWeight: '800', ...shadow },
   feed: { position: 'absolute', top: 104, right: 12, alignItems: 'flex-end', maxWidth: '70%' },
+  feedLandscape: { top: 86, right: 12, alignItems: 'flex-end', maxWidth: '50%' },
   feedItem: { color: 'white', fontSize: 11, fontWeight: '700', backgroundColor: 'rgba(5, 12, 24, 0.75)', borderLeftWidth: 2.5, borderLeftColor: '#00e5ff', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4, marginBottom: 3, overflow: 'hidden' },
   feedMine: { backgroundColor: 'rgba(255,210,63,0.3)', borderLeftColor: '#ffd23f', color: '#ffd23f' },
   centerWrap: { position: 'absolute', top: '38%', left: 0, right: 0, alignItems: 'center' },

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { HostServer } from '../net/hostServer';
 import { ClientConnection } from '../net/client';
 import { LobbyState } from '../net/protocol';
@@ -30,6 +31,7 @@ interface AppState {
   error: string | null;
   sound: boolean;
   vibration: boolean;
+  orientation: 'portrait' | 'landscape';
 }
 
 export const useApp = create<AppState>(() => ({
@@ -44,6 +46,7 @@ export const useApp = create<AppState>(() => ({
   error: null,
   sound: true,
   vibration: true,
+  orientation: 'portrait',
 }));
 
 const set = useApp.setState;
@@ -54,6 +57,22 @@ export const setName = (playerName: string) => set({ playerName: playerName.slic
 export const setPlaneType = (planeType: PlaneType) => set({ planeType });
 export const toggleSound = () => set((s) => ({ sound: !s.sound }));
 export const toggleVibration = () => set((s) => ({ vibration: !s.vibration }));
+export const setOrientation = async (orientation: 'portrait' | 'landscape') => {
+  set({ orientation });
+  try {
+    if (orientation === 'landscape') {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    } else {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    }
+  } catch (err) {
+    console.warn('Orientation change error:', err);
+  }
+};
+export const toggleOrientation = async () => {
+  const next = get().orientation === 'portrait' ? 'landscape' : 'portrait';
+  await setOrientation(next);
+};
 export const clearError = () => set({ error: null });
 
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
