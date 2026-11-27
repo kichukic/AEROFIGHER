@@ -51,6 +51,8 @@ export interface Plane {
   lastKillTime: number; // world time of last kill (for multi-kills)
   multiKills: number; // rapid kills count within window
   perk?: { kind: AirDropPerk; until: number };
+  /** Gunship OVERDRIVE special (independent of air-drop perks). */
+  overdriveUntil?: number;
 }
 
 export type AirDropPerk = 'twin_vulcan' | 'energy_shield' | 'cluster_missile' | 'overdrive';
