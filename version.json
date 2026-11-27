@@ -1,8 +1,8 @@
 {
-  "version": "1.0.3",
-  "versionCode": 4,
-  "url": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.3/AeroFighter-1.0.3.apk",
-  "size": 51666410,
-  "sha256": "f857854ffd3cd1bc1a6b4275220667ca24279793f26436fc0c3b2e5733b02ed3",
-  "notes": "AeroFighter release 1.0.3 (versionCode 4)."
+  "version": "1.0.6",
+  "versionCode": 7,
+  "url": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.6/AeroFighter-1.0.6.apk",
+  "size": 75438495,
+  "sha256": "747458883acb90747d2676aad205893fa20c75de196270682cbc68aa4d72f708",
+  "notes": "AeroFighter release 1.0.6 (versionCode 7)."
 }
