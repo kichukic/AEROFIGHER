@@ -240,7 +240,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
           (view.fire || autoFiring) && styles.btnDown,
         ]}
       >
-        <Text style={styles.btnText}>{autoFiring ? 'AUTO 🔥' : 'FIRE'}</Text>
+        <Text style={[styles.btnText, { fontSize: 13 }]}>{autoFiring ? 'LOCKED 🔥' : '💥 CANNON'}</Text>
       </View>
       {/* Auto-Fire Toggle */}
       <View
@@ -254,15 +254,15 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
             borderRadius: AUTO_R,
             left: autoC.x - AUTO_R,
             top: autoC.y - AUTO_R,
-            borderColor: autoFiring ? '#ff4d4d' : autoFire ? '#2ec4b6' : 'rgba(255,255,255,0.3)',
-            backgroundColor: autoFiring ? 'rgba(255,77,77,0.35)' : autoFire ? 'rgba(46,196,182,0.22)' : 'rgba(10,25,45,0.6)',
+            borderColor: autoFiring ? '#ff4d4d' : autoFire ? '#00f5d4' : 'rgba(255,255,255,0.3)',
+            backgroundColor: autoFiring ? 'rgba(255,77,77,0.35)' : autoFire ? 'rgba(0,245,212,0.22)' : 'rgba(10,25,45,0.6)',
           },
         ]}
       >
-        <Text style={[styles.btnTextSmall, { fontSize: 10, fontWeight: '900', color: autoFiring ? '#ff4d4d' : autoFire ? '#2ec4b6' : 'rgba(255,255,255,0.45)' }]}>
-          {autoFiring ? 'LOCK' : 'AUTO'}
+        <Text style={[styles.btnTextSmall, { fontSize: 10, fontWeight: '900', color: autoFiring ? '#ff4d4d' : autoFire ? '#00f5d4' : 'rgba(255,255,255,0.45)' }]}>
+          {autoFiring ? 'TARGET' : '🎯 AUTO'}
         </Text>
-        <Text style={[styles.btnTextSmall, { fontSize: 8, color: autoFiring ? '#ffb703' : autoFire ? '#2ec4b6' : 'rgba(255,255,255,0.35)' }]}>
+        <Text style={[styles.btnTextSmall, { fontSize: 8, color: autoFiring ? '#ffb703' : autoFire ? '#00f5d4' : 'rgba(255,255,255,0.35)' }]}>
           {autoFiring ? 'FIRE 🔥' : autoFire ? 'ON' : 'OFF'}
         </Text>
       </View>
@@ -283,7 +283,7 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
         ]}
       >
         <Text style={[styles.btnTextSmall, hasMissileLock && missiles > 0 ? { color: '#ffb703', fontWeight: '900' } : null]}>
-          {hasMissileLock && missiles > 0 ? 'LOCK 🎯' : 'MSL'}
+          {hasMissileLock && missiles > 0 ? '🎯 LOCK' : '🚀 MSL'}
         </Text>
         <Text style={styles.btnTextSmall}>{missiles}</Text>
       </View>
@@ -298,7 +298,9 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
         {specialCd > 0 ? (
           <View style={[styles.cdFill, { height: `${Math.min(100, (specialCd / specialMax) * 100)}%` }]} />
         ) : null}
-        <Text style={styles.btnTextSmall}>{specialLabel}</Text>
+        <Text style={styles.btnTextSmall}>
+          {specialLabel === 'DASH' ? '⚡ DASH' : specialLabel === 'FLARE' ? '🛡️ FLARE' : '💥 FLAK'}
+        </Text>
         {specialCd > 0 ? <Text style={styles.btnTextSmall}>{Math.ceil(specialCd)}</Text> : null}
       </View>
     </View>

@@ -96,7 +96,7 @@ start=$(date +%s)
     "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=768m" \
     -Pkotlin.daemon.jvm.options=-Xmx1024m \
     -Pandroid.enableMinifyInReleaseBuilds=false \
-    -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+    -PreactNativeArchitectures="${ARCHS:-arm64-v8a,armeabi-v7a}"
 )
 
 apk=android/app/build/outputs/apk/release/app-release.apk

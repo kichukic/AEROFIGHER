@@ -14,7 +14,7 @@ ASSET="AeroFighter-${VERSION}.apk"
 MANIFEST="version.json"
 
 echo "==> building release APK ($VERSION / code $CODE)"
-(cd android && JAVA_HOME="${JAVA_HOME_AERO:-/home/hijack/Android/jdk-21}" ANDROID_HOME="${ANDROID_HOME:-/home/hijack/Android/Sdk}" ./gradlew assembleRelease --console=plain --no-daemon --max-workers=2 -Dorg.gradle.parallel=false "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=768m" -Pandroid.enableMinifyInReleaseBuilds=false -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)
+(cd android && JAVA_HOME="${JAVA_HOME_AERO:-/home/hijack/Android/jdk-21}" ANDROID_HOME="${ANDROID_HOME:-/home/hijack/Android/Sdk}" ./gradlew assembleRelease --console=plain --no-daemon --max-workers=2 -Dorg.gradle.parallel=false "-Dorg.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=768m" -Pandroid.enableMinifyInReleaseBuilds=false -PreactNativeArchitectures="${ARCHS:-arm64-v8a,armeabi-v7a}")
 
 if [ ! -f "$APK" ]; then
   echo "APK not found at $APK" >&2; exit 1
