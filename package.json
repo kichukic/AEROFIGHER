@@ -38,7 +38,9 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:apk": "./build-apk.sh",
+    "publish": "./scripts/publish.sh"
   },
   "private": true
 }
