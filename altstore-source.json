@@ -21,6 +21,14 @@
       ],
       "versions": [
         {
+          "version": "1.0.7",
+          "date": "2026-11-27T11:51:36Z",
+          "localizedDescription": "AeroFighter 1.0.7 \u2014 free sideload build.",
+          "downloadURL": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.8/AeroFighter.ipa",
+          "size": 15770411,
+          "minOSVersion": "16.4"
+        },
+        {
           "version": "1.0.6",
           "date": "2026-11-27T11:26:38Z",
           "localizedDescription": "AeroFighter 1.0.6 \u2014 free sideload build.",
@@ -35,11 +43,11 @@
           "NSMicrophoneUsageDescription": "Allow AeroFighter to access your microphone"
         }
       },
-      "version": "1.0.6",
-      "versionDate": "2026-11-27T11:26:38Z",
-      "versionDescription": "AeroFighter 1.0.6 \u2014 free sideload build.",
-      "downloadURL": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.6/AeroFighter.ipa",
-      "size": 15768368
+      "version": "1.0.7",
+      "versionDate": "2026-11-27T11:51:36Z",
+      "versionDescription": "AeroFighter 1.0.7 \u2014 free sideload build.",
+      "downloadURL": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.8/AeroFighter.ipa",
+      "size": 15770411
     }
   ],
   "news": []
