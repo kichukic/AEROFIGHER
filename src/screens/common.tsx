@@ -117,10 +117,19 @@ export const CAPTURE_OPTIONS = [
 ];
 export const MODE_LABEL: Record<GameMode, string> = { ffa: 'Free-for-all', tdm: 'Team Deathmatch', ctf: 'Capture the Flag' };
 
+const MAP_ICONS: Record<MapId, string> = {
+  farmland: '🌾',
+  ocean: '🌊',
+  desert: '🏜️',
+  arctic: '❄️',
+  canyon: '🌄',
+  night: '🌃',
+};
+
 export function MapPicker({ value, onChange }: { value: MapId; onChange: (m: MapId) => void }) {
   return (
     <View style={{ marginBottom: 10 }}>
-      <Text style={styles.label}>Map</Text>
+      <Text style={styles.label}>Airspace</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {MAP_IDS.map((id) => {
           const m = MAPS[id];
@@ -134,11 +143,7 @@ export function MapPicker({ value, onChange }: { value: MapId; onChange: (m: Map
                 borderColor: active ? theme.accent : 'transparent', backgroundColor: m.palette.sky,
               }}
             >
-              <View style={{ flexDirection: 'row', gap: 3, height: 14, marginBottom: 2 }}>
-                {m.obstacles.slice(0, 5).map((o, i) => (
-                  <View key={i} style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: m.palette.rock, borderWidth: 1, borderColor: m.palette.rockEdge }} />
-                ))}
-              </View>
+              <Text style={{ fontSize: 13, marginBottom: 2 }}>{MAP_ICONS[id] ?? '✈️'}</Text>
               <Text style={{ color: id === 'night' || id === 'canyon' ? '#fff' : '#111', fontWeight: '900', fontSize: 11 }}>{m.label}</Text>
             </Pressable>
           );

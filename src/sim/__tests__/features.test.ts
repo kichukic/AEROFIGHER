@@ -70,6 +70,7 @@ describe('maps', () => {
   test('flying into a rock bounces and damages the plane', () => {
     const w = createWorld(configFor('ffa', 'desert'), two());
     park(w);
+    w.obstacles = [{ x: 1600, y: 1100, r: 150 }];
     const rock = w.obstacles[0];
     const a = w.planes[0];
     a.x = rock.x - rock.r - 30; a.y = rock.y; a.angle = 0;
@@ -81,6 +82,7 @@ describe('maps', () => {
 
   test('bullets are stopped by rocks', () => {
     const w = createWorld(configFor('ffa', 'desert'), two());
+    w.obstacles = [{ x: 1600, y: 1100, r: 150 }];
     const rock = w.obstacles[0];
     const [a, b] = w.planes;
     a.x = rock.x - rock.r - 60; a.y = rock.y; a.angle = 0; a.speed = 0;

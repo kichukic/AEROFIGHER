@@ -2,7 +2,7 @@
   "expo": {
     "name": "AeroFighter",
     "slug": "aerofighter",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -11,7 +11,7 @@
     },
     "android": {
       "package": "com.aerofighter.game",
-      "versionCode": 2,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#070f1e",
         "foregroundImage": "./assets/android-icon-foreground.png",
