@@ -26,6 +26,8 @@ export function GameScreen() {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [autoFire, setAutoFire] = useState(true);
   const [autoFiring, setAutoFiring] = useState(false);
+  const [accolade, setAccolade] = useState<{ title: string; subtitle?: string; color?: string } | null>(null);
+  const accoladeTimer = useRef<any>(null);
   const autoFireRef = useRef(true);
   const autoFiringRef = useRef(false);
   const feed = useRef<KillFeedItem[]>([]);
@@ -72,6 +74,12 @@ export function GameScreen() {
             const blastShake = (e.big ? 18 : 9) * prox;
             shake = Math.max(shake, blastShake);
           }
+        }
+        if (e.t === 'accolade' && e.id === session.myId) {
+          if (accoladeTimer.current) clearTimeout(accoladeTimer.current);
+          setAccolade({ title: e.title, subtitle: e.subtitle, color: e.color });
+          accoladeTimer.current = setTimeout(() => setAccolade(null), 2500);
+          shake = Math.max(shake, 14);
         }
         if (e.t === 'flag' && e.action !== 'drop') {
           const who = name(e.by);
@@ -178,9 +186,9 @@ export function GameScreen() {
   const me = session.world.planes.find((p) => p.id === session.myId);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#5aa9e6' }}>
+    <View style={{ flex: 1, backgroundColor: '#050c18' }}>
       <Canvas style={StyleSheet.absoluteFill}>{picture ? <Picture picture={picture} /> : null}</Canvas>
-      <Hud session={session} feed={feedView} tick={hudTick} />
+      <Hud session={session} feed={feedView} tick={hudTick} accolade={accolade} />
       {!session.world.ended ? (
         <Controls
           width={width}

@@ -1,4 +1,4 @@
-import { GameEvent, Input, MatchConfig, PickupKind, PlaneType, PlayerSlot, World } from '../sim/types';
+import { AirDropPerk, GameEvent, Input, MatchConfig, PickupKind, PlaneType, PlayerSlot, World } from '../sim/types';
 
 export const PROTOCOL_VERSION = 2;
 export const DISCOVERY_PORT = 47777;
@@ -59,6 +59,7 @@ export interface Snapshot {
   B: [number, number, number, number, number][]; // id, x, y, vx, vy
   M: [number, number, number, number][]; // id, x, y, angle
   K: [number, PickupKind, number, number][]; // id, kind, x, y
+  C?: [number, AirDropPerk, number, number, number][]; // id, perk, x, y, descentY
   F?: SnapFlag[];
   end?: { w: string | null; wt: number | null };
 }
@@ -85,6 +86,7 @@ export function encodeSnapshot(w: World): Snapshot {
     F: w.flags.length ? w.flags.map((f) => [f.team, r1(f.x), r1(f.y), f.carrier, f.droppedAt === null ? null : r3(f.droppedAt)]) : undefined,
     M: w.missiles.map((m) => [m.id, r1(m.x), r1(m.y), r3(m.angle)]),
     K: w.pickups.map((k) => [k.id, k.kind, r1(k.x), r1(k.y)]),
+    C: w.crates?.length ? w.crates.map((c) => [c.id, c.perk, r1(c.x), r1(c.y), r1(c.descentY)]) : undefined,
     end: w.ended ? { w: w.winner, wt: w.winnerTeam } : undefined,
   };
 }
@@ -121,8 +123,22 @@ export function applySnapshot(w: World, s: Snapshot): void {
   const ids = new Set(s.P.map((sp) => sp[0]));
   w.planes = w.planes.filter((p) => ids.has(p.id));
   w.bullets = s.B.map(([id, x, y, vx, vy]) => ({ id, x, y, vx, vy, owner: '', team: -1, life: 1, dmg: 0 }));
-  w.missiles = s.M.map(([id, x, y, angle]) => ({ id, x, y, angle, owner: '', team: -1, speed: 390, target: null, life: 1 }));
+  w.missiles = s.M.map(([id, x, y, angle]) => ({ id, x, y, angle, owner: '', team: -1, speed: 245, target: null, life: 1 }));
   w.pickups = s.K.map(([id, kind, x, y]) => ({ id, kind, x, y }));
+  if (s.C) {
+    w.crates = s.C.map(([id, perk, x, y, descentY]) => ({
+      id,
+      perk,
+      x,
+      y,
+      descentY,
+      landed: descentY >= 0,
+      beaconPhase: 0,
+      life: 30,
+    }));
+  } else {
+    w.crates = [];
+  }
   if (s.F) {
     for (const [team, x, y, carrier, droppedAt] of s.F) {
       const f = w.flags.find((g) => g.team === team);

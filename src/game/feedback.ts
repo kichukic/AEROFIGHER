@@ -51,6 +51,18 @@ export class Feedback {
         case 'pickup':
           if (e.id === myId) this.sfx('pickup', 0.8);
           break;
+        case 'pickup_crate':
+          if (e.id === myId) {
+            this.sfx('pickup', 1.0);
+            this.vib(160);
+          }
+          break;
+        case 'accolade':
+          if (e.id === myId) {
+            this.sfx('special', 0.9);
+            this.vib(120);
+          }
+          break;
         case 'special':
           this.sfx('special', e.id === myId ? 0.8 : 0.6 * fade(e.x, e.y));
           break;

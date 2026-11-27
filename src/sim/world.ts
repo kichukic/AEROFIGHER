@@ -2,6 +2,7 @@ import { PLANES, SPECIALS } from './planes';
 import { MAPS } from './maps';
 import { angleDiff, clamp, dist2, rand, turnTowards, wrapAngle } from './math';
 import {
+  AirDropPerk,
   Bullet,
   Cloud,
   Flag,
@@ -16,6 +17,7 @@ import {
   PickupKind,
   Plane,
   PlayerSlot,
+  SupplyCrate,
   Weapon,
   World,
 } from './types';
@@ -27,16 +29,18 @@ export const RESPAWN_DELAY = 3;
 export const SPAWN_PROTECTION = 2;
 export const ZONE_MARGIN = 350; // how far past the arena edge a plane may stray (hard clamp)
 export const ZONE_DPS = 14; // damage per second while outside the arena
-export const MISSILE_SPEED = 295;
-export const MISSILE_TURN = 7.2;
-export const MISSILE_LIFE = 4.8;
+export const MISSILE_SPEED = 245; // reduced so players can dodge and jiggle
+export const MISSILE_TURN = 3.6; // realistic seeker turn rate so sharp evasive turns outmaneuver it
+export const MISSILE_LIFE = 4.5;
 export const MISSILE_DAMAGE = 22;
 export const MISSILE_COOLDOWN = 0.5;
-export const MISSILE_LOCK_CONE = Math.PI * 0.75;
-export const MISSILE_LOCK_RANGE = 1100;
+export const MISSILE_LOCK_CONE = Math.PI * 0.70;
+export const MISSILE_LOCK_RANGE = 1000;
+export const SEEKER_MAX_OFF_BORESIGHT = 1.05; // ~60° max seeker gimbal angle; exceeding breaks lock
 export const PICKUP_RADIUS = 24;
 export const PICKUP_INTERVAL = 6;
 export const MAX_PICKUPS = 5;
+export const CRATE_INTERVAL = 25;
 export const SHIELD_TIME = 6;
 export const BOOST_TIME = 5;
 export const BOOST_MULT = 1.35;
@@ -80,7 +84,8 @@ function newPlane(w: World, s: PlayerSlot): Plane {
     x: 0, y: 0, angle: 0, speed: stats.minSpeed, hp: stats.hp, alive: true, respawnAt: 0,
     vx: 0, vy: 0, bank: 0, hitFlashUntil: 0,
     fireCd: 0, missileCd: 0, missiles: stats.missiles, specialCd: 0, shieldUntil: 0, boostUntil: 0,
-    dashUntil: 0, flareUntil: 0, spawnProtectUntil: 0, outOfBoundsTime: 0, inCloud: false, kills: 0, deaths: 0, caps: 0,
+    dashUntil: 0, flareUntil: 0, spawnProtectUntil: 0, outOfBoundsTime: 0, inCloud: false,
+    kills: 0, deaths: 0, caps: 0, streak: 0, lastKillTime: 0, multiKills: 0,
   };
 }
 
@@ -104,11 +109,13 @@ export function createWorld(config: MatchConfig, slots: PlayerSlot[], seed = 123
     bullets: [],
     missiles: [],
     pickups: [],
+    crates: [],
     flags: [],
     obstacles: map.obstacles.map((o) => ({ ...o })),
     clouds: createClouds(config),
     nextId: 1,
     nextPickupAt: 2,
+    nextCrateAt: 14,
     seed,
     ended: false,
     winner: null,
@@ -206,7 +213,61 @@ function damage(w: World, victim: Plane, amount: number, killerId: string | null
   if (killer && killer !== victim) {
     killer.kills++;
     if (w.config.mode === 'tdm' && killer.team >= 0) w.teamScores[killer.team as 0 | 1]++;
+
+    // Killstreak & Multikill tracking
+    killer.streak = (killer.streak || 0) + 1;
+    if (w.time - (killer.lastKillTime || 0) < 4.2) {
+      killer.multiKills = (killer.multiKills || 1) + 1;
+    } else {
+      killer.multiKills = 1;
+    }
+    killer.lastKillTime = w.time;
+
+    // Was the victim the match leader / Squadron Ace?
+    const wasAce = w.planes.every((other) => other.id === victim.id || victim.kills >= other.kills) && victim.kills >= 3;
+    if (wasAce) {
+      w.events.push({
+        t: 'accolade',
+        id: killer.id,
+        title: 'ACE DETHRONED! 👑',
+        subtitle: `Shot down Squadron Ace ${victim.name}`,
+        color: '#00f5d4',
+        sound: 'ace',
+      });
+    } else if ((victim.streak || 0) >= 3) {
+      w.events.push({
+        t: 'accolade',
+        id: killer.id,
+        title: 'SHUTDOWN! 🛑',
+        subtitle: `Ended ${victim.name}'s ${victim.streak} streak (+100 PTS)`,
+        color: '#ffd23f',
+        sound: 'shutdown',
+      });
+    }
+
+    // Accolade announcements for multikills & streaks
+    if (killer.multiKills === 2) {
+      w.events.push({ t: 'accolade', id: killer.id, title: 'DOUBLE KILL! 🔥', color: '#ffd23f', sound: 'streak' });
+    } else if (killer.multiKills === 3) {
+      w.events.push({ t: 'accolade', id: killer.id, title: 'TRIPLE KILL! ⚡', color: '#ff4d4d', sound: 'streak' });
+    } else if (killer.multiKills >= 4) {
+      w.events.push({ t: 'accolade', id: killer.id, title: 'ACE IN A DAY! 🏆', color: '#00f5d4', sound: 'streak' });
+    } else if (killer.streak === 3) {
+      w.events.push({ t: 'accolade', id: killer.id, title: 'KILLING SPREE 🎯', color: '#ffd23f', sound: 'streak' });
+    } else if (killer.streak === 5) {
+      w.events.push({ t: 'accolade', id: killer.id, title: 'RAMPAGE! 🔥', color: '#ff3b3b', sound: 'streak' });
+    } else if (killer.streak === 7) {
+      w.events.push({ t: 'accolade', id: killer.id, title: 'UNSTOPPABLE! ⚡', color: '#c77dff', sound: 'streak' });
+    } else if (killer.streak === 10) {
+      w.events.push({ t: 'accolade', id: killer.id, title: 'GODLIKE! 👑', color: '#ffd23f', sound: 'streak' });
+    }
   }
+
+  // Reset victim's streaks & perks
+  victim.streak = 0;
+  victim.multiKills = 0;
+  victim.perk = undefined;
+
   w.events.push({ t: 'kill', killer: killer && killer !== victim ? killer.id : null, victim: victim.id, weapon });
 }
 
@@ -215,6 +276,7 @@ export function speedMult(w: World, p: Plane): number {
   let m = 1;
   if (w.time < p.boostUntil) m *= BOOST_MULT;
   if (w.time < p.dashUntil) m *= DASH_MULT;
+  if (p.perk?.kind === 'overdrive' && w.time < p.perk.until) m *= 1.35;
   if (w.flags.some((f) => f.carrier === p.id)) m *= CARRIER_SPEED_MULT;
   return m;
 }
@@ -350,29 +412,52 @@ function stepPlane(w: World, p: Plane, input: Input, dt: number): void {
   // Guns
   p.fireCd -= dt;
   if (input.fire && p.fireCd <= 0) {
-    p.fireCd = stats.fireInterval;
+    const isTwin = p.perk?.kind === 'twin_vulcan' && w.time < p.perk.until;
+    p.fireCd = isTwin ? stats.fireInterval * 0.65 : stats.fireInterval;
     const nose = stats.radius + 4;
     const spread = (rnd(w) - 0.5) * 0.04;
     const a = p.angle + spread;
-    const b: Bullet = {
-      id: w.nextId++,
-      owner: p.id,
-      team: p.team,
-      x: p.x + Math.cos(p.angle) * nose,
-      y: p.y + Math.sin(p.angle) * nose,
-      vx: Math.cos(a) * stats.bulletSpeed + Math.cos(p.angle) * p.speed,
-      vy: Math.sin(a) * stats.bulletSpeed + Math.sin(p.angle) * p.speed,
-      life: stats.bulletLife,
-      dmg: stats.bulletDamage,
-    };
-    w.bullets.push(b);
+    if (isTwin) {
+      // Twin vulcan streams from both wingtips
+      const perpX = -Math.sin(p.angle);
+      const perpY = Math.cos(p.angle);
+      const offset = stats.radius * 0.65;
+      for (const sign of [-1, 1]) {
+        w.bullets.push({
+          id: w.nextId++,
+          owner: p.id,
+          team: p.team,
+          x: p.x + Math.cos(p.angle) * nose + perpX * offset * sign,
+          y: p.y + Math.sin(p.angle) * nose + perpY * offset * sign,
+          vx: Math.cos(a) * stats.bulletSpeed + Math.cos(p.angle) * p.speed,
+          vy: Math.sin(a) * stats.bulletSpeed + Math.sin(p.angle) * p.speed,
+          life: stats.bulletLife,
+          dmg: Math.round(stats.bulletDamage * 0.9),
+        });
+      }
+    } else {
+      const b: Bullet = {
+        id: w.nextId++,
+        owner: p.id,
+        team: p.team,
+        x: p.x + Math.cos(p.angle) * nose,
+        y: p.y + Math.sin(p.angle) * nose,
+        vx: Math.cos(a) * stats.bulletSpeed + Math.cos(p.angle) * p.speed,
+        vy: Math.sin(a) * stats.bulletSpeed + Math.sin(p.angle) * p.speed,
+        life: stats.bulletLife,
+        dmg: stats.bulletDamage,
+      };
+      w.bullets.push(b);
+    }
   }
 
   // Missiles
   p.missileCd -= dt;
   if (input.missile && p.missileCd <= 0 && p.missiles > 0) {
-    p.missileCd = MISSILE_COOLDOWN;
+    const isCluster = p.perk?.kind === 'cluster_missile' && w.time < p.perk.until;
+    p.missileCd = isCluster ? 0.28 : MISSILE_COOLDOWN;
     p.missiles--;
+    const lockTarget = findLockTarget(w, p);
     const m: Missile = {
       id: w.nextId++,
       owner: p.id,
@@ -380,8 +465,8 @@ function stepPlane(w: World, p: Plane, input: Input, dt: number): void {
       x: p.x + Math.cos(p.angle) * (stats.radius + 6),
       y: p.y + Math.sin(p.angle) * (stats.radius + 6),
       angle: p.angle,
-      speed: Math.max(MISSILE_SPEED, p.speed + 45),
-      target: findLockTarget(w, p),
+      speed: Math.max(MISSILE_SPEED + 35, p.speed + 25),
+      target: lockTarget,
       life: MISSILE_LIFE,
     };
     w.missiles.push(m);
@@ -528,19 +613,20 @@ function stepProjectiles(w: World, dt: number): void {
     let target = m.target ? planes.find((p) => p.id === m.target && p.alive) : undefined;
     if (target && (w.time < target.flareUntil || target.inCloud)) {
       m.target = null;
+      m.lostLock = true;
       target = undefined;
     }
 
-    // In-flight seeker head: if missile has no target, acquire nearest visible enemy ahead
-    if (!target) {
-      let bestDist = 950 * 950;
+    // In-flight seeker head: unguided missile acquires nearest visible enemy ahead if lock has not been broken
+    if (!target && !m.lostLock) {
+      let bestDist = 850 * 850;
       let bestPlane: Plane | undefined = undefined;
       for (const p of planes) {
         if (!p.alive || !isEnemy(w, m.owner, m.team, p) || w.time < p.flareUntil || p.inCloud) continue;
         const d = dist2(m.x, m.y, p.x, p.y);
         if (d > bestDist) continue;
         const a = Math.atan2(p.y - m.y, p.x - m.x);
-        if (Math.abs(angleDiff(m.angle, a)) > (Math.PI * 0.8) / 2) continue;
+        if (Math.abs(angleDiff(m.angle, a)) > (Math.PI * 0.7) / 2) continue;
         bestPlane = p;
         bestDist = d;
       }
@@ -551,28 +637,40 @@ function stepProjectiles(w: World, dt: number): void {
     }
 
     if (target) {
-      const dist = Math.hypot(target.x - m.x, target.y - m.y);
-      let desired: number;
-      if (dist < 260) {
-        // Direct pure pursuit when closing in - locks straight onto aircraft position
-        desired = Math.atan2(target.y - m.y, target.x - m.x);
+      const dx = target.x - m.x;
+      const dy = target.y - m.y;
+      const dist = Math.hypot(dx, dy);
+      const angleToTarget = Math.atan2(dy, dx);
+      const offBoresight = Math.abs(angleDiff(m.angle, angleToTarget));
+
+      // Seeker gimbal limit check:
+      // If the target banks away or pulls a sharp jiggle maneuver where angle exceeds ~60° (SEEKER_MAX_OFF_BORESIGHT)
+      // OR target flashes closely past the missile (dist < 85 && offBoresight > 0.8),
+      // the seeker head LOSES TRACK and flies dumbfire straight!
+      if (offBoresight > SEEKER_MAX_OFF_BORESIGHT || (dist < 85 && offBoresight > 0.82)) {
+        m.target = null; // LOST LOCK! Seeker loses tracking permanently
+        m.lostLock = true;
       } else {
-        // Predictive lead pursuit when distant
-        const tLead = Math.min(0.45, dist / Math.max(1, m.speed));
-        const targetVx = target.vx ?? (Math.cos(target.angle) * target.speed);
-        const targetVy = target.vy ?? (Math.sin(target.angle) * target.speed);
-        const leadX = target.x + targetVx * tLead;
-        const leadY = target.y + targetVy * tLead;
-        desired = Math.atan2(leadY - m.y, leadX - m.x);
+        // Direct pursuit when close, predictive lead pursuit when distant
+        let desired: number;
+        if (dist < 160) {
+          desired = angleToTarget;
+        } else {
+          const tLead = Math.min(0.32, dist / Math.max(1, m.speed));
+          const targetVx = target.vx ?? (Math.cos(target.angle) * target.speed);
+          const targetVy = target.vy ?? (Math.sin(target.angle) * target.speed);
+          const leadX = target.x + targetVx * tLead;
+          const leadY = target.y + targetVy * tLead;
+          desired = Math.atan2(leadY - m.y, leadX - m.x);
+        }
+        // Achievable G-force turning rate allowing evasive jiggling
+        m.angle = turnTowards(m.angle, desired, MISSILE_TURN * dt);
       }
-      // Tight homing turn rate that sharpens to ~9 rad/s in close dogfight range
-      const turnRate = dist < 220 ? MISSILE_TURN * 1.25 : MISSILE_TURN;
-      m.angle = turnTowards(m.angle, desired, turnRate * dt);
     }
 
-    // Settle speed towards steady missile cruising speed
+    // Settle speed towards steady missile cruising speed (245 px/s)
     if (m.speed > MISSILE_SPEED) {
-      m.speed = Math.max(MISSILE_SPEED, m.speed - dt * 60);
+      m.speed = Math.max(MISSILE_SPEED, m.speed - dt * 65);
     }
 
     m.x += Math.cos(m.angle) * m.speed * dt;
@@ -648,6 +746,87 @@ function stepPickups(w: World): void {
     }
     return true;
   });
+}
+
+const CRATE_PERKS: AirDropPerk[] = ['twin_vulcan', 'energy_shield', 'cluster_missile', 'overdrive'];
+
+function stepCrates(w: World, dt: number): void {
+  w.crates = w.crates ?? [];
+  if (w.time >= w.nextCrateAt && w.crates.length < 2) {
+    w.nextCrateAt = w.time + CRATE_INTERVAL + rnd(w) * 10;
+    const perk = CRATE_PERKS[Math.floor(rnd(w) * CRATE_PERKS.length)];
+    const x = 300 + rnd(w) * (w.config.arenaW - 600);
+    const y = 300 + rnd(w) * (w.config.arenaH - 600);
+    w.crates.push({
+      id: w.nextId++,
+      x,
+      y,
+      perk,
+      descentY: -130,
+      landed: false,
+      beaconPhase: 0,
+      life: 40,
+    });
+  }
+
+  const keptC: SupplyCrate[] = [];
+  for (const c of w.crates) {
+    c.life -= dt;
+    c.beaconPhase = (c.beaconPhase + dt * 3) % (Math.PI * 2);
+    if (!c.landed) {
+      c.descentY += 130 * dt;
+      if (c.descentY >= 0) {
+        c.descentY = 0;
+        c.landed = true;
+      }
+    }
+    if (c.life <= 0) continue;
+
+    let picked = false;
+    for (const p of w.planes) {
+      if (!p.alive) continue;
+      const r = PLANES[p.type].radius + 24;
+      if (dist2(c.x, c.y, p.x, p.y) <= r * r) {
+        picked = true;
+        p.perk = { kind: c.perk, until: w.time + 12 };
+        if (c.perk === 'energy_shield') p.shieldUntil = Math.max(p.shieldUntil, w.time + 12);
+        if (c.perk === 'cluster_missile') p.missiles = Math.min(PLANES[p.type].missiles + 4, p.missiles + 4);
+        if (c.perk === 'overdrive') p.boostUntil = Math.max(p.boostUntil, w.time + 10);
+
+        const titles: Record<AirDropPerk, string> = {
+          twin_vulcan: 'TWIN VULCAN! 💥',
+          energy_shield: 'ENERGY SHIELD! 🛡️',
+          cluster_missile: 'CLUSTER MISSILES! 🚀',
+          overdrive: 'HYPER OVERDRIVE! ⚡',
+        };
+        const subtitles: Record<AirDropPerk, string> = {
+          twin_vulcan: 'Dual high-velocity tracer rounds',
+          energy_shield: 'Invulnerable forcefield active (12s)',
+          cluster_missile: '+4 rapid tracking missiles loaded',
+          overdrive: 'Maximum speed & afterburner boost',
+        };
+        const colors: Record<AirDropPerk, string> = {
+          twin_vulcan: '#ff4d4d',
+          energy_shield: '#00f5d4',
+          cluster_missile: '#ffd23f',
+          overdrive: '#c77dff',
+        };
+
+        w.events.push({ t: 'pickup_crate', id: p.id, perk: c.perk, x: c.x, y: c.y });
+        w.events.push({
+          t: 'accolade',
+          id: p.id,
+          title: titles[c.perk],
+          subtitle: subtitles[c.perk],
+          color: colors[c.perk],
+          sound: 'streak',
+        });
+        break;
+      }
+    }
+    if (!picked) keptC.push(c);
+  }
+  w.crates = keptC;
 }
 
 // ---------------- Capture the Flag ----------------
@@ -761,6 +940,7 @@ export function step(w: World, inputs: Record<string, Input | undefined>, dt = D
   for (const p of w.planes) stepPlane(w, p, inputs[p.id] ?? IDLE_INPUT, dt);
   stepProjectiles(w, dt);
   stepPickups(w);
+  stepCrates(w, dt);
   stepFlags(w);
   checkEnd(w);
 }

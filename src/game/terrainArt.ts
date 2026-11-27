@@ -44,11 +44,22 @@ export interface TerrainTree {
   type: 'oak' | 'pine' | 'palm';
 }
 
+export interface NavalPlatform {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  angle: number;
+  label: string;
+}
+
 export interface TerrainData {
   fields: TerrainField[];
   roads: TerrainRoad[];
   runway: TerrainRunway | null;
   trees: TerrainTree[];
+  platforms: NavalPlatform[];
+  shoals: { x: number; y: number; rx: number; ry: number; angle: number }[];
 }
 
 function lcg(seed: number) {
@@ -70,10 +81,28 @@ export function getTerrain(mapId: MapId, arenaW: number, arenaH: number): Terrai
   const fields: TerrainField[] = [];
   const roads: TerrainRoad[] = [];
   const trees: TerrainTree[] = [];
+  const platforms: NavalPlatform[] = [];
+  const shoals: { x: number; y: number; rx: number; ry: number; angle: number }[] = [];
   let runway: TerrainRunway | null = null;
 
-  // 1. Farmland fields / grid parcels
-  if (mapId === 'farmland' || mapId === 'ocean' || mapId === 'desert' || mapId === 'canyon' || mapId === 'night') {
+  // Ocean: Sky Force Naval Fleet & Defense Platforms
+  if (mapId === 'ocean') {
+    // Strategic floating naval defense platforms / supercarrier decks
+    platforms.push({ x: arenaW * 0.35, y: arenaH * 0.45, w: 320, h: 140, angle: -0.15, label: 'CV-88' });
+    platforms.push({ x: arenaW * 0.7, y: arenaH * 0.6, w: 260, h: 120, angle: 0.2, label: 'RIG-04' });
+    platforms.push({ x: arenaW * 0.5, y: arenaH * 0.25, w: 220, h: 100, angle: 0.05, label: 'HELIPAD' });
+
+    // Turquoise shallow reef shoals and ocean atoll contours
+    for (let i = 0; i < 9; i++) {
+      shoals.push({
+        x: 300 + rnd() * (arenaW - 600),
+        y: 250 + rnd() * (arenaH - 500),
+        rx: 140 + rnd() * 220,
+        ry: 80 + rnd() * 140,
+        angle: rnd() * Math.PI,
+      });
+    }
+  } else if (mapId === 'farmland' || mapId === 'desert' || mapId === 'canyon' || mapId === 'night') {
     const crops: TerrainField['crop'][] = ['wheat', 'pasture', 'plowed', 'canola', 'fallow'];
     const cellSize = 260;
     const cols = Math.ceil(arenaW / cellSize);
@@ -93,7 +122,7 @@ export function getTerrain(mapId: MapId, arenaW: number, arenaH: number): Terrai
   }
 
   // 2. Airfield Runway (placed near center or lower third)
-  if (mapId === 'farmland' || mapId === 'night' || mapId === 'ocean') {
+  if (mapId === 'farmland' || mapId === 'night') {
     runway = {
       x: arenaW * 0.5,
       y: arenaH * 0.65,
@@ -153,7 +182,7 @@ export function getTerrain(mapId: MapId, arenaW: number, arenaH: number): Terrai
     }
   }
 
-  const result: TerrainData = { fields, roads, runway, trees };
+  const result: TerrainData = { fields, roads, runway, trees, platforms, shoals };
   terrainCache[key] = result;
   return result;
 }
@@ -188,6 +217,13 @@ interface TerrainPaints {
   runwayLine: SkPaint;
   runwayBorder: SkPaint;
   shadow: SkPaint;
+  shoal: SkPaint;
+  shoalInner: SkPaint;
+  platformHull: SkPaint;
+  platformDeck: SkPaint;
+  platformHazard: SkPaint;
+  runwayGreen: SkPaint;
+  runwayRed: SkPaint;
   treeDark: SkPaint[];
   treeMid: SkPaint[];
   treeLight: SkPaint[];
@@ -218,6 +254,13 @@ function getPaints(): TerrainPaints {
     runwayLine: paint('#ffffff', 2.5, 0.9),
     runwayBorder: paint('#191a1e', 3.5),
     shadow,
+    shoal: paint('#00e5ff', 0, 0.18),
+    shoalInner: paint('#00f5d4', 0, 0.28),
+    platformHull: paint('#1e293b'),
+    platformDeck: paint('#0f172a'),
+    platformHazard: paint('#ffd23f', 2, 0.9),
+    runwayGreen: paint('#00f5d4', 4, 0.95),
+    runwayRed: paint('#ff2a4a', 4, 0.95),
     // 3 tones of green for varied lush forest canopies
     treeDark: [paint('#1c4217'), paint('#183d21'), paint('#254714')],
     treeMid: [paint('#3c802b'), paint('#32753a'), paint('#4c8a29')],
@@ -239,6 +282,38 @@ export function drawGroundTerrain(
   mapId: MapId,
 ) {
   const p = getPaints();
+
+  // 0. Ocean Reef Shoals & Naval Battle Platforms (Sky Force Naval Theater)
+  if (terrain.shoals && terrain.shoals.length > 0) {
+    for (const sh of terrain.shoals) {
+      if (!visible(sh.x, sh.y, Math.max(sh.rx, sh.ry))) continue;
+      canvas.save();
+      canvas.translate(sh.x, sh.y);
+      canvas.rotate((sh.angle * 180) / Math.PI, 0, 0);
+      canvas.drawOval(Skia.XYWHRect(-sh.rx, -sh.ry, sh.rx * 2, sh.ry * 2), p.shoal);
+      canvas.drawOval(Skia.XYWHRect(-sh.rx * 0.6, -sh.ry * 0.6, sh.rx * 1.2, sh.ry * 1.2), p.shoalInner);
+      canvas.restore();
+    }
+  }
+
+  if (terrain.platforms && terrain.platforms.length > 0) {
+    for (const pl of terrain.platforms) {
+      if (!visible(pl.x, pl.y, Math.max(pl.w, pl.h))) continue;
+      canvas.save();
+      canvas.translate(pl.x, pl.y);
+      canvas.rotate((pl.angle * 180) / Math.PI, 0, 0);
+      const halfW = pl.w / 2;
+      const halfH = pl.h / 2;
+      canvas.drawRect(Skia.XYWHRect(-halfW + 6, -halfH + 8, pl.w, pl.h), p.shadow);
+      canvas.drawRect(Skia.XYWHRect(-halfW, -halfH, pl.w, pl.h), p.platformHull);
+      canvas.drawRect(Skia.XYWHRect(-halfW + 4, -halfH + 4, pl.w - 8, pl.h - 8), p.platformDeck);
+      canvas.drawLine(-halfW + 20, 0, halfW - 20, 0, p.runwayLine);
+      canvas.drawCircle(halfW - 35, 0, 18, p.platformHazard);
+      const f = getRunwayFont();
+      canvas.drawText('H', halfW - 42, 6, p.platformHazard, f);
+      canvas.restore();
+    }
+  }
 
   // 1. Draw patchwork fields
   for (const f of terrain.fields) {
@@ -327,6 +402,14 @@ export function drawGroundTerrain(
     const font = getRunwayFont();
     canvas.drawText('24', -halfL + 34, 7, p.runwayLine, font);
     canvas.drawText('06', halfL - 60, 7, p.runwayLine, font);
+
+    // Night stealth airfield: glowing approach threshold lights & red end beacons
+    if (mapId === 'night') {
+      canvas.drawCircle(-halfL + 12, -halfW + 6, 4, p.runwayGreen);
+      canvas.drawCircle(-halfL + 12, halfW - 6, 4, p.runwayGreen);
+      canvas.drawCircle(halfL - 12, -halfW + 6, 4, p.runwayRed);
+      canvas.drawCircle(halfL - 12, halfW - 6, 4, p.runwayRed);
+    }
 
     canvas.restore();
   }

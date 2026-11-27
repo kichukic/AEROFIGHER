@@ -7,20 +7,21 @@ import { GameSession } from './session';
 import { drawPlane, drawPlaneShadow } from './planeArt';
 import { drawGroundTerrain, drawTrees, getTerrain } from './terrainArt';
 
-// ---------- Palette (placeholder art; swap when reference art arrives) ----------
+// ---------- Palette (Sky Force Reloaded Cinematic Sci-Fi Theme) ----------
 export const COLORS = {
-  sky: '#5aa9e6',
-  skyDark: '#3d8bd0',
-  grid: 'rgba(255,255,255,0.08)',
-  cloud: 'rgba(255,255,255,0.55)',
-  zone: 'rgba(200,30,30,0.28)',
-  border: 'rgba(255,60,60,0.9)',
+  sky: '#0a1d37',
+  skyDark: '#061122',
+  grid: 'rgba(0,229,255,0.08)',
+  cloud: 'rgba(255,255,255,0.48)',
+  zone: 'rgba(220,30,50,0.3)',
+  border: 'rgba(0,229,255,0.9)',
   me: '#ffd23f',
-  team: ['#2f6bff', '#ff3b3b'],
-  ffa: ['#ff3b3b', '#9b5de5', '#00bb77', '#f15bb5', '#fe7f2d', '#00b4d8', '#6a4c93', '#e63946'],
-  bullet: '#fff6a0',
+  team: ['#00b4d8', '#ff3b3b'],
+  ffa: ['#ff3b3b', '#9b5de5', '#00f5d4', '#f15bb5', '#fe7f2d', '#00b4d8', '#ffd23f', '#e63946'],
+  bullet: '#ffffff',
+  bulletGlow: '#00e5ff',
   missile: '#ffffff',
-  pickup: { repair: '#3ddc84', shield: '#4cc9f0', missiles: '#ff9f1c', boost: '#f72585' } as Record<PickupKind, string>,
+  pickup: { repair: '#00f5d4', shield: '#00e5ff', missiles: '#ffaa00', boost: '#c77dff' } as Record<PickupKind, string>,
 };
 
 const PICKUP_LETTER: Record<PickupKind, string> = { repair: '+', shield: 'S', missiles: 'M', boost: 'B' };
@@ -92,27 +93,33 @@ function getCache() {
       zone: paint(COLORS.zone),
       border: paint(COLORS.border, 6),
       bullet: paint(COLORS.bullet, 3),
+      bulletGlow: paint('#00e5ff', 5.5, 0.45),
+      bulletCore: paint('#ffffff', 2.2),
       missile: paint(COLORS.missile),
       trail: paint('#ffffff', 0, 0.35),
-      shield: paint('#4cc9f0', 3, 0.8),
-      hpBg: paint('#000000', 0, 0.45),
-      hpFg: paint('#3ddc84'),
-      hpLow: paint('#ff4d4d'),
+      shield: paint('#00e5ff', 3, 0.8),
+      hpBg: paint('#050c18', 0, 0.65),
+      hpFg: paint('#00f5d4'),
+      hpLow: paint('#ff2a4a'),
       text: paint('#ffffff'),
-      textShadow: paint('#000000', 0, 0.6),
-      shadow: paint('#000000', 0, 0.18),
+      textShadow: paint('#000000', 0, 0.7),
+      shadow: paint('#000000', 0, 0.22),
       fx: paint('#ffb703'),
-      fxSmoke: paint('#444444'),
+      fxSmoke: paint('#334155'),
       spark: paint('#fff3b0'),
       sparkStreak: paint('#ffeedd', 2.2),
-      miniBg: paint('#0b1d33', 0, 0.55),
-      miniBorder: paint('#ffffff', 1.5, 0.6),
+      starGold: paint('#ffd23f'),
+      starCore: paint('#fff8d6'),
+      miniBg: paint('#050f1d', 0, 0.65),
+      miniBorder: paint('#00e5ff', 1.5, 0.7),
       arrow: paint('#ffffff'),
-      lock: paint('#ff4d4d', 2),
+      lock: paint('#ff2a4a', 2),
       pole: paint('#ffffff', 3),
-      aimLine: paint('#4cc9f0', 2, 0.45),
-      aimChevron: paint('#4cc9f0', 2.5, 0.85),
-      aimGlow: paint('#4cc9f0', 0, 0.25),
+      aimLine: paint('#00e5ff', 2, 0.45),
+      aimChevron: paint('#00e5ff', 2.5, 0.85),
+      aimGlow: paint('#00e5ff', 0, 0.25),
+      alertVignette: paint('#ff1e42', 8, 0.4),
+      techBracket: paint('#00e5ff', 2, 0.4),
     },
   };
   return cache;
@@ -147,12 +154,14 @@ interface Fx {
   y: number;
   age: number;
   life: number;
-  kind: 'boom' | 'smallboom' | 'spark' | 'flare' | 'flak' | 'dash' | 'dmgText' | 'smokePuff' | 'fireEmber';
+  kind: 'boom' | 'smallboom' | 'spark' | 'flare' | 'flak' | 'dash' | 'dmgText' | 'smokePuff' | 'fireEmber' | 'shockwave' | 'shrapnel';
   vx?: number;
   vy?: number;
   text?: string;
   color?: string;
   radius?: number;
+  angle?: number;
+  vAngle?: number;
 }
 
 export class FxSystem {
@@ -163,6 +172,28 @@ export class FxSystem {
     for (const e of events) {
       if (e.t === 'explode') {
         this.list.push({ x: e.x, y: e.y, age: 0, life: e.big ? 0.9 : 0.45, kind: e.big ? 'boom' : 'smallboom' });
+        // Kinetic expanding shockwave ring
+        this.list.push({ x: e.x, y: e.y, age: 0, life: e.big ? 0.65 : 0.35, kind: 'shockwave', radius: e.big ? 140 : 70 });
+        if (e.big) {
+          // Eject 6-8 pieces of tumbling fiery plane fuselage and wing wreckage
+          for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+            const spd = 75 + Math.random() * 125;
+            this.list.push({
+              x: e.x,
+              y: e.y,
+              vx: Math.cos(a) * spd,
+              vy: Math.sin(a) * spd,
+              age: 0,
+              life: 1.1 + Math.random() * 0.5,
+              kind: 'shrapnel',
+              radius: 5 + Math.random() * 6,
+              angle: Math.random() * Math.PI * 2,
+              vAngle: (Math.random() - 0.5) * 14,
+              color: i % 2 === 0 ? '#ffb703' : '#333333',
+            });
+          }
+        }
       } else if (e.t === 'hit') {
         // High-velocity armor spark shower in all directions
         for (let i = 0; i < 6; i++) {
@@ -206,6 +237,11 @@ export class FxSystem {
       f.age += dt;
       if (f.vx) f.x += f.vx * dt;
       if (f.vy) f.y += f.vy * dt;
+      if (f.vAngle) f.angle = (f.angle ?? 0) + f.vAngle * dt;
+      if (f.kind === 'shrapnel') {
+        f.vx = (f.vx ?? 0) * 0.97;
+        f.vy = (f.vy ?? 0) * 0.97;
+      }
     }
     this.list = this.list.filter((f) => f.age < f.life);
 
@@ -340,23 +376,61 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
     }
   }
 
-  // Pickups
+  // Pickups (Sky Force Golden Star / Medal Collectibles)
   for (const k of w.pickups) {
     if (!visible(k.x, k.y, 40)) continue;
-    const pulse = 1 + Math.sin(time * 5 + k.id) * 0.1;
-    canvas.drawCircle(k.x, k.y, 20 * pulse, fillFor(COLORS.pickup[k.kind]));
-    canvas.drawCircle(k.x, k.y, 20 * pulse, c.p.miniBorder);
+    const pulse = 1 + Math.sin(time * 6 + k.id) * 0.12;
+    const r = 18 * pulse;
+    canvas.drawCircle(k.x, k.y, r + 4, fillFor(COLORS.pickup[k.kind]));
+    canvas.drawCircle(k.x, k.y, r, c.p.starGold);
+    canvas.drawCircle(k.x, k.y, r * 0.45, c.p.starCore);
     const letter = PICKUP_LETTER[k.kind];
     const tw = c.font.measureText(letter).width;
-    canvas.drawText(letter, k.x - tw / 2, k.y + 5, c.p.text, c.font);
+    canvas.drawText(letter, k.x - tw / 2, k.y + 5, c.p.textShadow, c.font);
   }
 
-  // Bullets
+  // Air-Drop Supply Crates
+  if (w.crates) {
+    for (const cr of w.crates) {
+      if (!visible(cr.x, cr.y + cr.descentY, 60)) continue;
+      const crateY = cr.y + cr.descentY;
+
+      // Expanding radar beacon ring on ground
+      const pulseR = 10 + (cr.beaconPhase / (Math.PI * 2)) * 28;
+      c.p.shield.setAlphaf(Math.max(0, 1 - pulseR / 38));
+      canvas.drawCircle(cr.x, cr.y, pulseR, c.p.shield);
+      c.p.shield.setAlphaf(0.8);
+
+      // Parachute if descending
+      if (!cr.landed) {
+        const chuteR = 18;
+        const chuteY = crateY - 26;
+        canvas.drawCircle(cr.x, chuteY, chuteR, c.p.cloud);
+        canvas.drawLine(cr.x - chuteR + 3, chuteY + 2, cr.x - 7, crateY - 8, c.p.pole);
+        canvas.drawLine(cr.x + chuteR - 3, chuteY + 2, cr.x + 7, crateY - 8, c.p.pole);
+      }
+
+      // Military steel crate box
+      canvas.drawRect(Skia.XYWHRect(cr.x - 11, crateY - 11, 22, 22), c.p.miniBg);
+      canvas.drawRect(Skia.XYWHRect(cr.x - 11, crateY - 11, 22, 22), c.p.miniBorder);
+
+      // Distinct perk colored badge & symbol
+      const pColor = cr.perk === 'twin_vulcan' ? '#ff4d4d' : cr.perk === 'energy_shield' ? '#00f5d4' : cr.perk === 'cluster_missile' ? '#ffd23f' : '#c77dff';
+      const pBadge = cr.perk === 'twin_vulcan' ? 'V' : cr.perk === 'energy_shield' ? 'S' : cr.perk === 'cluster_missile' ? 'M' : 'O';
+      const fillP = fillFor(pColor);
+      canvas.drawCircle(cr.x, crateY, 7, fillP);
+      const tw = c.smallFont.measureText(pBadge).width;
+      canvas.drawText(pBadge, cr.x - tw / 2, crateY + 4, c.p.textShadow, c.smallFont);
+    }
+  }
+
+  // Bullets: Sky Force glowing high-energy plasma bolts
   for (const b of w.bullets) {
     const bx = b.x + b.vx * ex;
     const by = b.y + b.vy * ex;
     if (!visible(bx, by, 20)) continue;
-    canvas.drawLine(bx, by, bx - b.vx * 0.018, by - b.vy * 0.018, c.p.bullet);
+    canvas.drawLine(bx, by, bx - b.vx * 0.022, by - b.vy * 0.022, c.p.bulletGlow);
+    canvas.drawLine(bx, by, bx - b.vx * 0.016, by - b.vy * 0.016, c.p.bulletCore);
   }
 
   // Missiles
@@ -398,12 +472,16 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
 
   // Planes: shadows first so they never cover another plane.
   const ART_SCALE = 1.25; // artwork is drawn a bit larger than the hit radius
+  const topKills = Math.max(0, ...w.planes.map((p) => p.kills));
+  const aceId = topKills >= 2 ? w.planes.find((p) => p.kills === topKills && w.planes.filter((q) => q.kills === topKills).length === 1)?.id : null;
+
   for (const p of w.planes) {
     if (!p.alive) continue;
     const pose = s.pose(p);
     if (!visible(pose.x, pose.y, 80)) continue;
     drawPlaneShadow(canvas, p.type, pose.x, pose.y, pose.angle, PLANES[p.type].radius * ART_SCALE, p.bank ?? 0);
   }
+
   for (const p of w.planes) {
     if (!p.alive) continue;
     const pose = s.pose(p);
@@ -553,6 +631,14 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
     // HP bar + name
     canvas.drawRect(Skia.XYWHRect(pose.x - bw / 2, pose.y - st.radius - 14, bw, 5), c.p.hpBg);
     canvas.drawRect(Skia.XYWHRect(pose.x - bw / 2, pose.y - st.radius - 14, bw * frac, 5), frac < 0.35 ? c.p.hpLow : c.p.hpFg);
+    if (aceId && p.id === aceId) {
+      const crownBob = Math.sin(time * 5) * 3;
+      const crownY = pose.y - st.radius - 28 + crownBob;
+      const crownTxt = '👑 ACE';
+      const tw = c.smallFont.measureText(crownTxt).width;
+      c.p.spark.setAlphaf(0.95);
+      canvas.drawText(crownTxt, pose.x - tw / 2, crownY, c.p.spark, c.smallFont);
+    }
     if (p.id !== s.myId) {
       const tw = c.smallFont.measureText(p.name).width;
       canvas.drawText(p.name, pose.x - tw / 2 + 1, pose.y - st.radius - 19, c.p.textShadow, c.smallFont);
@@ -587,6 +673,25 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
       c.p.trail.setAlphaf((1 - t) * 0.6);
       canvas.drawCircle(f.x, f.y, 15 + t * 40, c.p.trail);
       c.p.trail.setAlphaf(0.35);
+    } else if (f.kind === 'shockwave') {
+      const alpha = Math.max(0, (1 - t) * 0.7);
+      c.p.shield.setAlphaf(alpha);
+      const rad = 14 + t * (f.radius ?? 100);
+      canvas.drawCircle(f.x, f.y, rad, c.p.shield);
+      c.p.shield.setAlphaf(0.8);
+    } else if (f.kind === 'shrapnel') {
+      const alpha = Math.max(0, 1 - t * 0.8);
+      const len = f.radius ?? 6;
+      const shrapPaint = fillFor(f.color ?? '#333333');
+      shrapPaint.setAlphaf(alpha);
+      canvas.save();
+      canvas.translate(f.x, f.y);
+      canvas.rotate(((f.angle ?? 0) * 180) / Math.PI, 0, 0);
+      canvas.drawRect(Skia.XYWHRect(-len, -len / 3, len * 2, len * 0.7), shrapPaint);
+      // Fiery glowing tip
+      c.p.spark.setAlphaf(alpha * 0.9);
+      canvas.drawCircle(len * 0.7, 0, len * 0.45, c.p.spark);
+      canvas.restore();
     } else if (f.kind === 'spark') {
       const alpha = Math.max(0, 1 - t);
       c.p.spark.setAlphaf(alpha);
@@ -658,16 +763,36 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
   const sy = mmH / arenaH;
   for (const o of w.obstacles) canvas.drawCircle(mmX + o.x * sx, mmY + o.y * sy, Math.max(2, o.r * sx), mp.rock);
   for (const k of w.pickups) canvas.drawCircle(mmX + k.x * sx, mmY + k.y * sy, 2.5, fillFor(COLORS.pickup[k.kind]));
+  if (w.crates) {
+    for (const cr of w.crates) canvas.drawCircle(mmX + cr.x * sx, mmY + cr.y * sy, 3, c.p.shield);
+  }
   for (const f of w.flags) {
     const fx2 = mmX + f.x * sx;
     const fy2 = mmY + f.y * sy;
     canvas.drawRect(Skia.XYWHRect(fx2 - 3, fy2 - 3, 6, 6), fillFor(COLORS.team[f.team]));
     canvas.drawRect(Skia.XYWHRect(fx2 - 3, fy2 - 3, 6, 6), c.p.miniBorder);
   }
+
   for (const p of w.planes) {
     if (!p.alive) continue;
     if (p.inCloud && p.id !== s.myId && (!me || p.team !== me.team)) continue;
     const pose = s.pose(p);
+    if (aceId && p.id === aceId) {
+      canvas.drawCircle(mmX + pose.x * sx, mmY + pose.y * sy, 6.5, c.p.spark);
+    }
     canvas.drawCircle(mmX + pose.x * sx, mmY + pose.y * sy, p.id === s.myId ? 4.5 : 3.5, fillFor(planeColor(w, p, s.myId)));
   }
+
+  // Sky Force Low-Health Red Alert Vignette on screen border
+  if (me && me.alive && me.hp < PLANES[me.type].hp * 0.35) {
+    const pulse = 0.25 + Math.sin(time * 12) * 0.18;
+    c.p.alertVignette.setAlphaf(pulse);
+    canvas.drawRect(Skia.XYWHRect(4, 4, vw - 8, vh - 8), c.p.alertVignette);
+  }
+
+  // Sky Force Tactical Corner Brackets
+  canvas.drawLine(14, 14, 38, 14, c.p.techBracket);
+  canvas.drawLine(14, 14, 14, 38, c.p.techBracket);
+  canvas.drawLine(14, vh - 14, 38, vh - 14, c.p.techBracket);
+  canvas.drawLine(14, vh - 14, 14, vh - 38, c.p.techBracket);
 }

@@ -2,23 +2,23 @@ import { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 export const theme = {
-  bg: '#060c18',
-  bgCard: '#0b172a',
-  panel: '#0e1f38',
-  panelLight: '#162e52',
-  panelBorder: '#1c3d6c',
+  bg: '#040914',
+  bgCard: '#081324',
+  panel: '#0c1b33',
+  panelLight: '#14284b',
+  panelBorder: 'rgba(0, 229, 255, 0.32)',
   accent: '#ffd23f',
-  accentGlow: 'rgba(255, 210, 63, 0.22)',
-  cyan: '#00f5d4',
-  cyanGlow: 'rgba(0, 245, 212, 0.2)',
+  accentGlow: 'rgba(255, 210, 63, 0.3)',
+  cyan: '#00e5ff',
+  cyanGlow: 'rgba(0, 229, 255, 0.35)',
   orange: '#ff9f1c',
   text: '#ffffff',
   textMuted: '#cbd5e1',
   dim: '#7e97b8',
-  danger: '#ff3b5c',
-  ok: '#10b981',
-  blue: '#3b82f6',
-  red: '#ef4444',
+  danger: '#ff2a4a',
+  ok: '#00f5d4',
+  blue: '#00b4d8',
+  red: '#ff3b3b',
 };
 
 export function Button({

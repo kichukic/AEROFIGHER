@@ -55,77 +55,80 @@ const R = (x: number, y: number, w: number, h: number) => Skia.XYWHRect(x, y, w,
 
 function design(type: PlaneType): Design {
   if (type === 'interceptor') {
-    // Swept-wing camo jet.
-    const body = mirror([[1.55, 0], [1.3, 0.07], [0.9, 0.14], [0.4, 0.19], [-0.7, 0.2], [-0.95, 0.15], [-1.02, 0.1]]);
-    const wings = pair([[0.45, 0.17], [-0.3, 0.98], [-0.58, 1.0], [-0.55, 0.18]]);
-    const tail = pair([[-0.58, 0.16], [-0.92, 0.52], [-1.08, 0.52], [-1.0, 0.14]]);
-    const intakes = rrect(0.05, 0.17, 0.42, 0.13) + ' ' + rrect(0.05, -0.3, 0.42, 0.13);
+    // Sky Force "Swift Justice": Sleek supersonic forward-swept delta interceptor with twin plasma thrusters.
+    const body = mirror([[1.62, 0], [1.35, 0.06], [0.95, 0.13], [0.35, 0.18], [-0.7, 0.19], [-1.02, 0.14], [-1.08, 0.09]]);
+    const wings = pair([[0.5, 0.16], [-0.25, 1.05], [-0.55, 1.08], [-0.62, 0.18]]);
+    const tail = pair([[-0.65, 0.16], [-0.96, 0.54], [-1.12, 0.54], [-1.05, 0.14]]);
+    const intakes = rrect(0.08, 0.16, 0.44, 0.12) + ' ' + rrect(0.08, -0.28, 0.44, 0.12);
     return {
       body: P(body), wings: P(wings), tail: P(tail), extras: P(intakes),
       silhouette: P([body, wings, tail, intakes].join(' ')),
       camo: [
-        { x: 0.6, y: 0.05, r: 0.16 }, { x: -0.2, y: -0.1, r: 0.18 }, { x: -0.3, y: 0.6, r: 0.2 },
-        { x: -0.45, y: -0.7, r: 0.18 }, { x: 0.1, y: 0.35, r: 0.12, light: true }, { x: -0.1, y: -0.45, r: 0.14, light: true },
-        { x: -0.85, y: 0.35, r: 0.12 }, { x: 1.0, y: -0.06, r: 0.1, light: true },
+        { x: 0.5, y: 0.05, r: 0.15 }, { x: -0.2, y: -0.1, r: 0.16 }, { x: -0.35, y: 0.65, r: 0.18 },
+        { x: -0.45, y: -0.75, r: 0.18 }, { x: 0.1, y: 0.4, r: 0.12, light: true }, { x: -0.1, y: -0.4, r: 0.14, light: true },
       ],
-      bands: [R(-0.7, 0.7, 1.2, 0.12), R(-0.7, -0.82, 1.2, 0.12)],
-      noseBand: R(1.22, -0.3, 0.5, 0.6),
-      tailBand: R(-1.2, -0.6, 0.22, 1.2),
-      roundels: [[-0.3, 0.55], [-0.3, -0.55]],
-      panelLines: [[0.6, -0.15, 0.6, 0.15], [-0.3, -0.2, -0.3, 0.2], [-0.1, 0.3, -0.45, 0.85], [-0.1, -0.3, -0.45, -0.85]],
-      canopy: R(0.62, -0.09, 0.5, 0.18),
+      bands: [R(-0.7, 0.75, 1.2, 0.12), R(-0.7, -0.87, 1.2, 0.12)],
+      noseBand: R(1.25, -0.3, 0.5, 0.6),
+      tailBand: R(-1.22, -0.6, 0.22, 1.2),
+      roundels: [[-0.28, 0.6], [-0.28, -0.6]],
+      panelLines: [[0.6, -0.14, 0.6, 0.14], [-0.25, -0.18, -0.25, 0.18], [-0.1, 0.3, -0.48, 0.92], [-0.1, -0.3, -0.48, -0.92]],
+      canopy: R(0.68, -0.08, 0.48, 0.16),
       turret: null,
       props: [],
       propSpan: 0,
-      jets: [[-1.02, 0]],
-      scheme: { base: '#6f7d3c', wing: '#66743a', dark: '#3c4720', light: '#a8955a' },
+      jets: [[-1.06, -0.06], [-1.06, 0.06]],
+      scheme: { base: '#1e293b', wing: '#334155', dark: '#0f172a', light: '#475569' },
     };
   }
   if (type === 'bomber') {
-    // Four-engine heavy bomber.
-    const body = mirror([[1.32, 0], [1.22, 0.12], [0.95, 0.2], [0.4, 0.23], [-0.75, 0.17], [-1.12, 0.09], [-1.2, 0.04]]);
-    const wings = pair([[0.38, 0.2], [0.24, 1.38], [0.05, 1.48], [-0.2, 1.42], [-0.3, 0.2]]);
-    const tail = pair([[-0.78, 0.13], [-0.92, 0.62], [-1.1, 0.66], [-1.2, 0.58], [-1.18, 0.08]]);
-    const nacelles = [0.5, 0.95, -0.5, -0.95].map((y) => rrect(0.05, y - 0.09, 0.62, 0.18)).join(' ');
+    // Sky Force "Iron Clad": Heavy armored stealth battlecruiser with quad plasma thrusters.
+    const body = mirror([[1.45, 0], [1.32, 0.12], [0.95, 0.22], [0.35, 0.25], [-0.75, 0.2], [-1.15, 0.12], [-1.22, 0.06]]);
+    const wings = pair([[0.42, 0.22], [0.22, 1.42], [0.02, 1.5], [-0.22, 1.44], [-0.35, 0.22]]);
+    const tail = pair([[-0.78, 0.15], [-0.94, 0.66], [-1.14, 0.68], [-1.22, 0.6], [-1.18, 0.1]]);
+    const nacelles = [0.55, 1.02, -0.55, -1.02].map((y) => rrect(0.08, y - 0.09, 0.65, 0.18)).join(' ');
     return {
       body: P(body), wings: P(wings), tail: P(tail), extras: P(nacelles),
       silhouette: P([body, wings, tail, nacelles].join(' ')),
       camo: [
-        { x: 0.1, y: 0.8, r: 0.22 }, { x: -0.1, y: -1.1, r: 0.2 }, { x: 0.5, y: -0.05, r: 0.15 },
-        { x: -0.5, y: 0.08, r: 0.16 }, { x: -1.0, y: -0.4, r: 0.14 }, { x: 0.0, y: 1.25, r: 0.14, light: true },
+        { x: 0.1, y: 0.85, r: 0.22 }, { x: -0.1, y: -1.15, r: 0.2 }, { x: 0.5, y: -0.05, r: 0.16 },
+        { x: -0.5, y: 0.08, r: 0.18 }, { x: -1.0, y: -0.45, r: 0.14 },
       ],
-      bands: [R(-0.4, 0.62, 0.9, 0.1), R(-0.4, -0.72, 0.9, 0.1)],
-      noseBand: R(1.05, -0.3, 0.4, 0.6),
-      tailBand: R(-1.25, -0.7, 0.25, 1.4),
-      roundels: [[-0.02, 1.2], [-0.02, -1.2]],
-      panelLines: [[0.7, -0.2, 0.7, 0.2], [0.0, -0.22, 0.0, 0.22], [-0.5, -0.18, -0.5, 0.18], [0.3, 0.3, 0.2, 1.3], [0.3, -0.3, 0.2, -1.3]],
-      canopy: R(0.88, -0.12, 0.3, 0.24),
-      turret: [0.45, 0],
-      props: [[0.7, 0.5], [0.7, 0.95], [0.7, -0.5], [0.7, -0.95]],
-      propSpan: 0.3,
-      jets: [],
-      scheme: { base: '#55594d', wing: '#4b4f44', dark: '#33362e', light: '#7a7d68' },
+      bands: [R(-0.4, 0.65, 0.9, 0.1), R(-0.4, -0.75, 0.9, 0.1)],
+      noseBand: R(1.12, -0.3, 0.4, 0.6),
+      tailBand: R(-1.28, -0.7, 0.25, 1.4),
+      roundels: [[-0.02, 1.24], [-0.02, -1.24]],
+      panelLines: [[0.7, -0.22, 0.7, 0.22], [0.0, -0.24, 0.0, 0.24], [-0.5, -0.2, -0.5, 0.2], [0.3, 0.35, 0.18, 1.35], [0.3, -0.35, 0.18, -1.35]],
+      canopy: R(0.92, -0.11, 0.32, 0.22),
+      turret: [0.42, 0],
+      props: [],
+      propSpan: 0,
+      jets: [[-1.2, -0.15], [-1.2, -0.05], [-1.2, 0.05], [-1.2, 0.15]],
+      scheme: { base: '#131822', wing: '#202737', dark: '#0b0f17', light: '#354157' },
     };
   }
-  // Fighter: WW2-style single-prop fighter, bare metal.
-  const body = mirror([[1.12, 0], [1.08, 0.12], [0.85, 0.16], [0.3, 0.18], [-0.55, 0.12], [-0.98, 0.06], [-1.04, 0.02]]);
-  const wings = pair([[0.36, 0.17], [0.27, 1.12], [0.12, 1.24], [-0.1, 1.24], [-0.22, 1.12], [-0.26, 0.17]]);
-  const tail = pair([[-0.72, 0.1], [-0.8, 0.46], [-0.92, 0.52], [-1.02, 0.46], [-1.02, 0.06]]);
+  // Fighter: Sky Force "Gladius" — high-performance twin-plasma strike fighter with swept wings.
+  const body = mirror([[1.42, 0], [1.25, 0.1], [0.85, 0.17], [0.3, 0.19], [-0.65, 0.16], [-1.04, 0.1], [-1.1, 0.04]]);
+  const wings = pair([[0.42, 0.18], [0.15, 1.18], [-0.08, 1.25], [-0.28, 1.16], [-0.34, 0.18]]);
+  const tail = pair([[-0.72, 0.12], [-0.88, 0.52], [-1.05, 0.56], [-1.12, 0.48], [-1.08, 0.08]]);
+  const intakes = rrect(0.02, 0.16, 0.38, 0.1) + ' ' + rrect(0.02, -0.26, 0.38, 0.1);
   return {
-    body: P(body), wings: P(wings), tail: P(tail), extras: null,
-    silhouette: P([body, wings, tail].join(' ')),
-    camo: [],
-    bands: [R(-0.4, 0.82, 0.9, 0.12), R(-0.4, -0.94, 0.9, 0.12)],
-    noseBand: R(0.82, -0.3, 0.5, 0.6),
-    tailBand: R(-1.1, -0.6, 0.2, 1.2),
-    roundels: [[0.05, 0.6], [0.05, -0.6]],
-    panelLines: [[0.55, -0.16, 0.55, 0.16], [-0.2, -0.16, -0.2, 0.16], [0.3, 0.25, 0.22, 1.1], [0.3, -0.25, 0.22, -1.1], [-0.15, 0.25, -0.2, 1.1], [-0.15, -0.25, -0.2, -1.1]],
-    canopy: R(0.12, -0.1, 0.42, 0.2),
+    body: P(body), wings: P(wings), tail: P(tail), extras: P(intakes),
+    silhouette: P([body, wings, tail, intakes].join(' ')),
+    camo: [
+      { x: 0.3, y: 0.04, r: 0.14 }, { x: -0.2, y: -0.08, r: 0.15 }, { x: -0.1, y: 0.7, r: 0.16 },
+      { x: -0.15, y: -0.7, r: 0.16 }, { x: 0.1, y: -0.4, r: 0.12, light: true },
+    ],
+    bands: [R(-0.4, 0.78, 0.9, 0.12), R(-0.4, -0.9, 0.9, 0.12)],
+    noseBand: R(1.05, -0.3, 0.45, 0.6),
+    tailBand: R(-1.18, -0.6, 0.22, 1.2),
+    roundels: [[-0.05, 0.7], [-0.05, -0.7]],
+    panelLines: [[0.58, -0.15, 0.58, 0.15], [-0.2, -0.17, -0.2, 0.17], [0.25, 0.25, 0.1, 1.05], [0.25, -0.25, 0.1, -1.05]],
+    canopy: R(0.48, -0.09, 0.42, 0.18),
     turret: null,
-    props: [[1.13, 0]],
-    propSpan: 0.48,
-    jets: [],
-    scheme: { base: '#b9c2c9', wing: '#a9b3bb', dark: '#7d8890', light: '#e4eaee' },
+    props: [],
+    propSpan: 0,
+    jets: [[-1.08, -0.08], [-1.08, 0.08]],
+    scheme: { base: '#1a273e', wing: '#253a5c', dark: '#0e1828', light: '#3a5682' },
   };
 }
 
@@ -217,29 +220,33 @@ let common: {
   blade: SkPaint;
   flameOuter: SkPaint;
   flameInner: SkPaint;
+  strobeCyan: SkPaint;
+  strobeRed: SkPaint;
   nozzle: SkPaint;
   hitFlash: SkPaint;
 } | null = null;
 
 function getCommon() {
   if (common) return common;
-  const shadow = fill('#000000', 0.28);
-  shadow.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 0.09, true));
+  const shadow = fill('#000000', 0.35);
+  shadow.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, 0.12, true));
   common = {
-    outline: stroke('#17130f', 0.13),
-    innerLine: stroke('#17130f', 0.045, 0.9),
-    panel: stroke('#17130f', 0.022, 0.35),
+    outline: stroke('#0a0e14', 0.11),
+    innerLine: stroke('#0a0e14', 0.045, 0.9),
+    panel: stroke('#00e5ff', 0.022, 0.4),
     shadow,
-    glass: linear(0, -0.12, 0, 0.12, ['#9fe3ff', '#2f7fb8', '#123a5c'], [0, 0.45, 1]),
-    frame: stroke('#17130f', 0.04),
-    glint: fill('#ffffff', 0.85),
-    white: fill('#f4f1e8'),
+    glass: linear(0, -0.12, 0, 0.12, ['#00e5ff', '#0284c7', '#082f49'], [0, 0.45, 1]),
+    frame: stroke('#0a0e14', 0.04),
+    glint: fill('#ffffff', 0.9),
+    white: fill('#f8fafc'),
     propDisc: fill('#d8d8d8', 0.28),
     blade: stroke('#2a2622', 0.05),
-    flameOuter: fill('#ff8a1c', 0.85),
-    flameInner: fill('#fff3b0', 0.95),
-    nozzle: fill('#2b2b2b'),
-    hitFlash: fill('#ffffff', 0.8),
+    flameOuter: fill('#00d4ff', 0.9), // Sky Force supersonic cyan plasma thruster
+    flameInner: fill('#ffffff', 0.98), // Blazing white-hot fusion core
+    strobeCyan: fill('#00f5d4', 0.95),
+    strobeRed: fill('#ff2a4a', 0.95),
+    nozzle: fill('#1e293b'),
+    hitFlash: fill('#ffffff', 0.85),
   };
   return common;
 }
@@ -339,6 +346,13 @@ export function drawPlane(
 
   // 8) Jet nozzles.
   for (const [jx, jy] of d.jets) canvas.drawOval(R(jx - 0.06, jy - 0.1, 0.1, 0.2), c.nozzle);
+
+  // 9) Sky Force Wingtip Navigation Strobes (Cyan on starboard, Red on port)
+  const strobe = Math.floor(time * 5) % 2 === 0;
+  if (strobe) {
+    canvas.drawCircle(-0.3, 1.05, 0.055, c.strobeCyan);
+    canvas.drawCircle(-0.3, -1.05, 0.055, c.strobeRed);
+  }
 
   // 9) Propellers: blurred disc + two spinning blades seen edge-on, coloured spinner.
   for (const [px, py] of d.props) {

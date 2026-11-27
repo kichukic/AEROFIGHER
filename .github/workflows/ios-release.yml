@@ -1,0 +1,357 @@
+name: iOS Release Build & Ad Hoc Distribution
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.5). Leave empty to use version from app.json'
+        required: false
+        default: ''
+      draft:
+        description: 'Publish as draft release'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Publish as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    name: Build & Sign iOS IPA (Ad Hoc)
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: 1. Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 2. Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 3. Select Xcode version
+        run: |
+          echo "Available Xcode installations:"
+          ls -d /Applications/Xcode* || true
+          if [ -d "/Applications/Xcode_16.0.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
+          elif [ -d "/Applications/Xcode_15.4.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+
+      - name: 4. Extract App Metadata
+        id: meta
+        run: |
+          APP_VERSION=$(node -p "require('./app.json').expo.version")
+          BUNDLE_ID=$(node -p "require('./app.json').expo.ios?.bundleIdentifier || 'com.aerofighter.game'")
+          APP_NAME=$(node -p "require('./app.json').expo.name || 'AeroFighter'")
+          
+          # Resolve Release Tag
+          INPUT_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="v${APP_VERSION}"
+          fi
+          
+          echo "version=${APP_VERSION}" >> $GITHUB_OUTPUT
+          echo "bundle_id=${BUNDLE_ID}" >> $GITHUB_OUTPUT
+          echo "app_name=${APP_NAME}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          
+          echo "==> Target App: ${APP_NAME} (${BUNDLE_ID}) v${APP_VERSION} (Tag: ${TAG})"
+
+      - name: 5. Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cocoapods
+            ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: 6. Install npm dependencies
+        run: |
+          npm ci
+
+      - name: 7. Expo Prebuild for iOS (Generate Native Project)
+        run: |
+          # Continuous Native Generation (CNG): generates ios/ folder matching app.json
+          npx expo prebuild --platform ios --clean
+
+      - name: 8. Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: 9. Configure Apple Signing Certificate & Keychain
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          if [ -z "$CERTIFICATE_BASE64" ] || [ -z "$KEYCHAIN_PASSWORD" ]; then
+            echo "::error::Missing required secret: IOS_CERTIFICATE_BASE64 or IOS_KEYCHAIN_PASSWORD"
+            exit 1
+          fi
+
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          CERT_PATH=$RUNNER_TEMP/distribution.p12
+
+          # Create ephemeral keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Decode and import p12 certificate
+          echo -n "$CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
+          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+          echo "==> Keychain and certificate imported successfully"
+
+      - name: 10. Install Ad Hoc Provisioning Profile
+        env:
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          if [ -z "$PROVISIONING_PROFILE_BASE64" ]; then
+            echo "::error::Missing required secret: IOS_PROVISIONING_PROFILE_BASE64"
+            exit 1
+          fi
+
+          PP_DIR=~/Library/MobileDevice/Provisioning\ Profiles
+          mkdir -p "$PP_DIR"
+
+          PP_PATH=$RUNNER_TEMP/adhoc.mobileprovision
+          echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o "$PP_PATH"
+
+          # Extract UUID and Name from provisioning profile
+          PROFILE_UUID=$(security cms -D -i "$PP_PATH" | plutil -extract UUID raw -)
+          PROFILE_NAME=$(security cms -D -i "$PP_PATH" | plutil -extract Name raw -)
+
+          if [ -z "$PROFILE_UUID" ]; then
+            echo "::error::Could not extract UUID from provisioning profile"
+            exit 1
+          fi
+
+          cp "$PP_PATH" "$PP_DIR/$PROFILE_UUID.mobileprovision"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> $GITHUB_ENV
+          echo "PROFILE_NAME=$PROFILE_NAME" >> $GITHUB_ENV
+          echo "==> Installed Provisioning Profile: $PROFILE_NAME ($PROFILE_UUID)"
+
+      - name: 11. Generate ExportOptions.plist
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ steps.meta.outputs.bundle_id }}
+        run: |
+          if [ -z "$TEAM_ID" ]; then
+            echo "::error::Missing required secret: APPLE_TEAM_ID"
+            exit 1
+          fi
+
+          mkdir -p build
+          cat > build/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>ad-hoc</string>
+              <key>teamID</key>
+              <string>${TEAM_ID}</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>${BUNDLE_ID}</key>
+                  <string>${PROFILE_UUID}</string>
+              </dict>
+              <key>signingCertificate</key>
+              <string>Apple Distribution</string>
+              <key>compileBitcode</key>
+              <false/>
+              <key>destination</key>
+              <string>export</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          echo "==> Generated build/ExportOptions.plist:"
+          cat build/ExportOptions.plist
+
+      - name: 12. Build and Archive iOS Project
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SCHEME: ${{ steps.meta.outputs.app_name }}
+        run: |
+          mkdir -p build/archive
+          xcodebuild -workspace ios/${SCHEME}.xcworkspace \
+            -scheme "${SCHEME}" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "build/archive/${SCHEME}.xcarchive" \
+            PROVISIONING_PROFILE_SPECIFIER="${PROFILE_UUID}" \
+            DEVELOPMENT_TEAM="${TEAM_ID}" \
+            CODE_SIGN_STYLE="Manual" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN_PATH}" \
+            archive | xcbeautify || xcodebuild -workspace ios/${SCHEME}.xcworkspace \
+              -scheme "${SCHEME}" \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -archivePath "build/archive/${SCHEME}.xcarchive" \
+              PROVISIONING_PROFILE_SPECIFIER="${PROFILE_UUID}" \
+              DEVELOPMENT_TEAM="${TEAM_ID}" \
+              CODE_SIGN_STYLE="Manual" \
+              CODE_SIGN_IDENTITY="Apple Distribution" \
+              OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN_PATH}" \
+              archive
+
+      - name: 13. Export Signed IPA
+        env:
+          SCHEME: ${{ steps.meta.outputs.app_name }}
+        run: |
+          mkdir -p build/export
+          xcodebuild -exportArchive \
+            -archivePath "build/archive/${SCHEME}.xcarchive" \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -exportPath build/export \
+            OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN_PATH}"
+
+      - name: 14. Stage Release Assets & Generate OTA Manifest
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUNDLE_ID: ${{ steps.meta.outputs.bundle_id }}
+          APP_NAME: ${{ steps.meta.outputs.app_name }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          mkdir -p release-assets
+          
+          # Find exported IPA file
+          EXPORTED_IPA=$(find build/export -name "*.ipa" | head -n 1)
+          if [ -z "$EXPORTED_IPA" ] || [ ! -f "$EXPORTED_IPA" ]; then
+            echo "::error::IPA export failed; no .ipa file found in build/export"
+            exit 1
+          fi
+
+          FINAL_IPA_NAME="${APP_NAME}-${VERSION}.ipa"
+          cp "$EXPORTED_IPA" "release-assets/${FINAL_IPA_NAME}"
+          cp "$EXPORTED_IPA" "release-assets/${APP_NAME}.ipa"
+
+          # Generate manifest.plist and install.html
+          chmod +x ./scripts/generate-ota-manifest.sh
+          ./scripts/generate-ota-manifest.sh \
+            "${{ github.repository }}" \
+            "${TAG}" \
+            "${VERSION}" \
+            "${BUNDLE_ID}" \
+            "${APP_NAME}" \
+            "release-assets"
+
+          # Calculate SHA256 checksum and file size
+          IPA_SIZE=$(stat -f%z "release-assets/${FINAL_IPA_NAME}")
+          IPA_SHA=$(shasum -a 256 "release-assets/${FINAL_IPA_NAME}" | cut -d' ' -f1)
+
+          cat > release-assets/RELEASE_NOTES.md <<MD
+          # ${APP_NAME} ${VERSION} (iOS Ad Hoc Distribution)
+
+          ### 📲 Installation Options:
+
+          1. **OTA Web Install (Safari on iPhone)**:
+             - Open the release page or \`install.html\` in Safari on your iPhone.
+             - Tap the installation link:
+               \`itms-services://?action=download-manifest&url=https://github.com/${{ github.repository }}/releases/download/${TAG}/manifest.plist\`
+
+          2. **Direct IPA Sideload**:
+             - Download \`${FINAL_IPA_NAME}\`
+             - Install via **Sideloadly**, **AltStore**, or **Apple Configurator**.
+
+          ### 🔐 Package Verification:
+          - **Bundle ID**: \`${BUNDLE_ID}\`
+          - **File Size**: $(( IPA_SIZE / 1024 / 1024 )) MB (\`${IPA_SIZE}\` bytes)
+          - **SHA-256**: \`${IPA_SHA}\`
+
+          > **Note for iOS 16+**: You must enable **Developer Mode** in *Settings > Privacy & Security > Developer Mode* to run Ad Hoc builds.
+          MD
+
+      - name: 15. Create or Update GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          APP_NAME: ${{ steps.meta.outputs.app_name }}
+          DRAFT: ${{ github.event.inputs.draft || 'false' }}
+          PRERELEASE: ${{ github.event.inputs.prerelease || 'false' }}
+        run: |
+          FLAGS=()
+          if [ "$DRAFT" = "true" ]; then FLAGS+=("--draft"); fi
+          if [ "$PRERELEASE" = "true" ]; then FLAGS+=("--prerelease"); fi
+
+          FINAL_IPA_NAME="${APP_NAME}-${VERSION}.ipa"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "==> Release $TAG exists. Uploading iOS assets..."
+            gh release upload "$TAG" \
+              "release-assets/${FINAL_IPA_NAME}" \
+              "release-assets/${APP_NAME}.ipa" \
+              "release-assets/manifest.plist" \
+              "release-assets/install.html" \
+              --clobber
+          else
+            echo "==> Creating new release $TAG..."
+            gh release create "$TAG" \
+              "release-assets/${FINAL_IPA_NAME}" \
+              "release-assets/${APP_NAME}.ipa" \
+              "release-assets/manifest.plist" \
+              "release-assets/install.html" \
+              --title "${APP_NAME} ${VERSION}" \
+              --notes-file release-assets/RELEASE_NOTES.md \
+              "${FLAGS[@]}"
+          fi
+
+      - name: 16. Upload Workflow Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-${{ steps.meta.outputs.version }}
+          path: |
+            release-assets/*.ipa
+            release-assets/manifest.plist
+            release-assets/install.html
+            release-assets/RELEASE_NOTES.md
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: 17. Clean up Keychain and Provisioning Profile
+        if: always()
+        run: |
+          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+          rm -rf ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision || true
+          rm -rf build/

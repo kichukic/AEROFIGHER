@@ -303,4 +303,29 @@ describe('true homing missiles', () => {
     // Seeker must have locked onto enemy plane b
     expect(w.missiles[0].target).toBe(w.planes[1].id);
   });
+
+  test('seeker breaks lock when target jiggles or outmaneuvers off-boresight limit', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    // Enemy is positioned 80 degrees off boresight (beyond ~60 deg limit)
+    w.planes[1].x = 1050; w.planes[1].y = 1200;
+
+    w.missiles.push({
+      id: 998,
+      owner: 'a',
+      team: 0,
+      x: 1000,
+      y: 1000,
+      angle: 0, // missile facing east
+      speed: 245,
+      target: w.planes[1].id,
+      life: 4,
+    });
+
+    step(w, {});
+    // Target was too far off-boresight, missile must lose lock and not re-lock
+    expect(w.missiles[0].target).toBeNull();
+    expect(w.missiles[0].lostLock).toBe(true);
+  });
 });

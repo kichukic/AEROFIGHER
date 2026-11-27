@@ -88,14 +88,27 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       const dx = s.knob.x - s.base.x;
       const dy = s.knob.y - s.base.y;
       const dist = Math.hypot(dx, dy);
-      const mag = Math.min(1, dist / STICK_R);
-      s.input = {
-        aim: mag > 0.08 ? Math.atan2(dy, dx) : null,
-        throttle: mag > 0.08 ? 0.55 + 0.45 * Math.min(1, (mag - 0.08) / 0.75) : 0.65,
-        fire: s.fireIds.size > 0,
-        missile: s.missileIds.size > 0,
-        special: s.specialIds.size > 0,
-      };
+      const rawMag = Math.min(1, dist / STICK_R);
+      const DEADZONE = 0.12;
+      if (rawMag > DEADZONE) {
+        const norm = (rawMag - DEADZONE) / (1 - DEADZONE);
+        const curvedMag = Math.pow(norm, 1.25);
+        s.input = {
+          aim: Math.atan2(dy, dx),
+          throttle: 0.55 + 0.45 * curvedMag,
+          fire: s.fireIds.size > 0,
+          missile: s.missileIds.size > 0,
+          special: s.specialIds.size > 0,
+        };
+      } else {
+        s.input = {
+          aim: null,
+          throttle: 0.65,
+          fire: s.fireIds.size > 0,
+          missile: s.missileIds.size > 0,
+          special: s.specialIds.size > 0,
+        };
+      }
     } else {
       s.input = { aim: null, throttle: 0.65, fire: s.fireIds.size > 0, missile: s.missileIds.size > 0, special: s.specialIds.size > 0 };
     }
@@ -349,13 +362,13 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#4cc9f0',
-    opacity: 0.85,
+    backgroundColor: '#00e5ff',
+    opacity: 0.9,
   },
-  btn: { position: 'absolute', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(230,57,70,0.6)', borderWidth: 3, borderColor: 'rgba(255,255,255,0.7)' },
-  autoBtn: { backgroundColor: 'rgba(10,25,45,0.65)', borderWidth: 2.2 },
-  missileBtn: { backgroundColor: 'rgba(255,159,28,0.6)' },
-  specialBtn: { backgroundColor: 'rgba(76,201,240,0.65)', overflow: 'hidden' },
+  btn: { position: 'absolute', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(230,57,70,0.65)', borderWidth: 2.5, borderColor: 'rgba(0,229,255,0.6)' },
+  autoBtn: { backgroundColor: 'rgba(5,15,30,0.75)', borderWidth: 2.2 },
+  missileBtn: { backgroundColor: 'rgba(255,170,0,0.65)', borderColor: 'rgba(255,210,63,0.7)' },
+  specialBtn: { backgroundColor: 'rgba(0,229,255,0.65)', borderColor: 'rgba(0,245,212,0.8)', overflow: 'hidden' },
   cdFill: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
   btnDown: { transform: [{ scale: 0.92 }], backgroundColor: 'rgba(255,255,255,0.55)' },
   btnEmpty: { opacity: 0.4 },

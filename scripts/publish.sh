@@ -37,7 +37,7 @@ echo "==> manifest:"; cat "$MANIFEST"
 
 # Keep the repository version.json updated so Fastly CDN (raw.githubusercontent.com)
 # has instant, reliable manifest availability worldwide with zero 504 risk.
-git add "$MANIFEST"
+git add -f "$MANIFEST"
 git commit -m "chore(release): manifest for $VERSION ($CODE)" || true
 git push origin HEAD || true
 

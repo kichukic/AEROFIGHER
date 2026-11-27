@@ -21,8 +21,14 @@ function fmtTime(s: number) {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
 
+export interface AccoladeItem {
+  title: string;
+  subtitle?: string;
+  color?: string;
+}
+
 /** Text overlay; re-rendered ~10x/second via `tick`. */
-export function Hud({ session, feed }: { session: GameSession; feed: KillFeedItem[]; tick: number }) {
+export function Hud({ session, feed, accolade }: { session: GameSession; feed: KillFeedItem[]; tick: number; accolade?: AccoladeItem | null }) {
   const w = session.world;
   const me = w.planes.find((p) => p.id === session.myId);
   const stats = me ? PLANES[me.type] : null;
@@ -77,16 +83,31 @@ export function Hud({ session, feed }: { session: GameSession; feed: KillFeedIte
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* Top-left: health */}
+      {/* Top-left: health & tactical telemetry */}
       {me && stats ? (
         <View style={styles.status}>
-          <Text style={styles.statusLabel}>{stats.label.toUpperCase()}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={styles.statusLabel}>[ TAC // {stats.label.toUpperCase()} ]</Text>
+            {me.streak >= 2 ? (
+              <View style={styles.comboBadge}>
+                <Text style={styles.comboText}>🔥 x{me.streak}</Text>
+              </View>
+            ) : null}
+          </View>
           <View style={styles.hpBar}>
-            <View style={[styles.hpFill, { width: `${Math.max(0, (me.hp / stats.hp) * 100)}%`, backgroundColor: me.hp / stats.hp < 0.35 ? '#ff4d4d' : '#3ddc84' }]} />
+            <View style={[styles.hpFill, { width: `${Math.max(0, (me.hp / stats.hp) * 100)}%`, backgroundColor: me.hp / stats.hp < 0.35 ? '#ff2a4a' : '#00f5d4' }]} />
+            {w.time < me.shieldUntil ? (
+              <View style={[styles.shieldFill, { width: `${Math.min(100, ((me.shieldUntil - w.time) / 6) * 100)}%` }]} />
+            ) : null}
           </View>
           <View style={styles.row}>
-            {w.time < me.shieldUntil ? <Text style={[styles.tag, { backgroundColor: COLORS.pickup.shield }]}>SHIELD</Text> : null}
-            {w.time < me.boostUntil ? <Text style={[styles.tag, { backgroundColor: COLORS.pickup.boost }]}>BOOST</Text> : null}
+            {w.time < me.shieldUntil ? <Text style={[styles.tag, { backgroundColor: '#00e5ff', color: '#04111d' }]}>SHIELD</Text> : null}
+            {w.time < me.boostUntil ? <Text style={[styles.tag, { backgroundColor: '#c77dff', color: '#04111d' }]}>BOOST</Text> : null}
+            {me.perk && w.time < me.perk.until ? (
+              <Text style={[styles.tag, { backgroundColor: me.perk.kind === 'twin_vulcan' ? '#ff2a4a' : me.perk.kind === 'cluster_missile' ? '#ffd23f' : '#00e5ff', color: '#04111d' }]}>
+                {me.perk.kind === 'twin_vulcan' ? 'VULCAN' : me.perk.kind === 'cluster_missile' ? 'CLUSTER' : me.perk.kind === 'overdrive' ? 'OVERDRIVE' : 'SHIELD'} {Math.ceil(me.perk.until - w.time)}s
+              </Text>
+            ) : null}
             <Text style={styles.statusSmall}>K {me.kills}  D {me.deaths}</Text>
           </View>
         </View>
@@ -124,6 +145,15 @@ export function Hud({ session, feed }: { session: GameSession; feed: KillFeedIte
         </View>
       ) : null}
 
+      {accolade ? (
+        <View style={styles.accoladeWrap}>
+          <View style={[styles.accoladeCard, { borderColor: accolade.color ?? '#ffd23f' }]}>
+            <Text style={[styles.accoladeTitle, { color: accolade.color ?? '#ffd23f' }]}>{accolade.title}</Text>
+            {accolade.subtitle ? <Text style={styles.accoladeSub}>{accolade.subtitle}</Text> : null}
+          </View>
+        </View>
+      ) : null}
+
       {ping !== null ? <Text style={styles.ping}>{ping} ms</Text> : null}
     </View>
   );
@@ -136,22 +166,29 @@ const styles = StyleSheet.create({
   status: { position: 'absolute', top: 10, left: 58, width: 150 },
   statusLabel: { color: 'white', fontWeight: '900', fontSize: 12, ...shadow },
   statusSmall: { color: 'white', fontWeight: '700', fontSize: 11, marginTop: 3, ...shadow },
-  hpBar: { height: 10, borderRadius: 5, backgroundColor: 'rgba(0,0,0,0.4)', marginTop: 3, overflow: 'hidden' },
+  hpBar: { height: 10, borderRadius: 5, backgroundColor: 'rgba(5, 12, 24, 0.75)', borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.35)', marginTop: 3, overflow: 'hidden', position: 'relative' },
   hpFill: { height: 10 },
-  tag: { color: 'white', fontSize: 10, fontWeight: '900', paddingHorizontal: 5, borderRadius: 4, marginRight: 4, marginTop: 3, overflow: 'hidden' },
-  top: { position: 'absolute', top: 62, left: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  timer: { color: 'white', fontSize: 22, fontWeight: '900', ...shadow },
+  shieldFill: { position: 'absolute', top: 0, left: 0, height: 10, backgroundColor: 'rgba(0, 229, 255, 0.55)', borderBottomWidth: 2, borderBottomColor: '#ffffff' },
+  comboBadge: { backgroundColor: 'rgba(255, 183, 3, 0.25)', borderColor: '#ffb703', borderWidth: 1, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 },
+  comboText: { color: '#ffb703', fontWeight: '900', fontSize: 10, letterSpacing: 0.8 },
+  tag: { color: '#04111d', fontSize: 10, fontWeight: '900', paddingHorizontal: 5, borderRadius: 4, marginRight: 4, marginTop: 3, overflow: 'hidden' },
+  top: { position: 'absolute', top: 68, left: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  timer: { color: '#00e5ff', fontSize: 22, fontWeight: '900', letterSpacing: 1.2, ...shadow },
   score: { fontSize: 22, fontWeight: '900', ...shadow },
   scoreSep: { color: 'white', fontSize: 20, fontWeight: '900', ...shadow },
-  scoreSmall: { color: 'white', fontSize: 13, fontWeight: '800', ...shadow },
+  scoreSmall: { color: '#e0e6ed', fontSize: 13, fontWeight: '800', ...shadow },
   feed: { position: 'absolute', top: 104, right: 12, alignItems: 'flex-end', maxWidth: '70%' },
-  feedItem: { color: 'white', fontSize: 12, fontWeight: '700', backgroundColor: 'rgba(0,0,0,0.3)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 3, overflow: 'hidden' },
-  feedMine: { backgroundColor: 'rgba(255,210,63,0.55)', color: '#111' },
+  feedItem: { color: 'white', fontSize: 11, fontWeight: '700', backgroundColor: 'rgba(5, 12, 24, 0.75)', borderLeftWidth: 2.5, borderLeftColor: '#00e5ff', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4, marginBottom: 3, overflow: 'hidden' },
+  feedMine: { backgroundColor: 'rgba(255,210,63,0.3)', borderLeftColor: '#ffd23f', color: '#ffd23f' },
   centerWrap: { position: 'absolute', top: '38%', left: 0, right: 0, alignItems: 'center' },
-  center: { color: 'white', fontSize: 22, fontWeight: '900', textAlign: 'center', paddingHorizontal: 16, ...shadow },
+  center: { color: 'white', fontSize: 22, fontWeight: '900', textAlign: 'center', paddingHorizontal: 16, letterSpacing: 1.5, ...shadow },
   warnWrap: { position: 'absolute', top: '30%', left: 12, right: 12, alignItems: 'center' },
-  warn: { color: '#ffdddd', backgroundColor: 'rgba(200,0,0,0.55)', fontSize: 16, fontWeight: '900', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, overflow: 'hidden' },
+  warn: { color: '#ffffff', backgroundColor: 'rgba(220,20,50,0.75)', borderColor: '#ff2a4a', borderWidth: 1.5, fontSize: 15, fontWeight: '900', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, letterSpacing: 1, overflow: 'hidden' },
   flagWrap: { position: 'absolute', top: '24%', left: 12, right: 12, alignItems: 'center' },
-  flag: { fontSize: 14, fontWeight: '900', backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' },
+  flag: { fontSize: 14, fontWeight: '900', backgroundColor: 'rgba(5, 12, 24, 0.75)', borderColor: '#00e5ff', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' },
+  accoladeWrap: { position: 'absolute', top: '15%', left: 0, right: 0, alignItems: 'center' },
+  accoladeCard: { backgroundColor: 'rgba(5, 12, 24, 0.94)', borderWidth: 2.5, borderRadius: 14, paddingHorizontal: 26, paddingVertical: 12, alignItems: 'center', shadowColor: '#00e5ff', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 10, elevation: 10 },
+  accoladeTitle: { fontSize: 22, fontWeight: '900', letterSpacing: 1.5, ...shadow },
+  accoladeSub: { color: '#e0e6ed', fontSize: 12, fontWeight: '700', marginTop: 3, ...shadow },
   ping: { position: 'absolute', bottom: 6, left: 0, right: 0, textAlign: 'center', color: 'rgba(255,255,255,0.7)', fontSize: 11 },
 });

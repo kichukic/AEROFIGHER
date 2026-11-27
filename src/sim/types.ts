@@ -47,6 +47,23 @@ export interface Plane {
   kills: number;
   deaths: number;
   caps: number; // flag captures (CTF)
+  streak: number; // current killstreak without dying
+  lastKillTime: number; // world time of last kill (for multi-kills)
+  multiKills: number; // rapid kills count within window
+  perk?: { kind: AirDropPerk; until: number };
+}
+
+export type AirDropPerk = 'twin_vulcan' | 'energy_shield' | 'cluster_missile' | 'overdrive';
+
+export interface SupplyCrate {
+  id: number;
+  x: number;
+  y: number;
+  perk: AirDropPerk;
+  descentY: number;
+  landed: boolean;
+  beaconPhase: number;
+  life: number;
 }
 
 export interface Bullet {
@@ -72,6 +89,7 @@ export interface Missile {
   speed: number;
   target: string | null;
   life: number;
+  lostLock?: boolean;
 }
 
 export interface Pickup {
@@ -112,6 +130,8 @@ export type GameEvent =
   | { t: 'pickup'; id: string; kind: PickupKind }
   | { t: 'special'; id: string; kind: SpecialKind; x: number; y: number }
   | { t: 'flag'; team: number; action: FlagAction; by: string | null }
+  | { t: 'accolade'; id: string; title: string; subtitle?: string; color?: string; sound?: 'streak' | 'ace' | 'shutdown' }
+  | { t: 'pickup_crate'; id: string; perk: AirDropPerk; x: number; y: number }
   | { t: 'end'; winner: string | null; winnerTeam: number | null };
 
 export type BotDifficulty = 'easy' | 'medium' | 'hard';
@@ -135,11 +155,13 @@ export interface World {
   bullets: Bullet[];
   missiles: Missile[];
   pickups: Pickup[];
+  crates: SupplyCrate[];
   flags: Flag[];
   obstacles: Obstacle[];
   clouds: Cloud[];
   nextId: number;
   nextPickupAt: number;
+  nextCrateAt: number;
   seed: number;
   ended: boolean;
   winner: string | null;
