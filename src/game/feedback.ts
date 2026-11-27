@@ -1,0 +1,106 @@
+import { Vibration } from 'react-native';
+import { angleDiff } from '../sim/math';
+import { GameEvent, Input } from '../sim/types';
+import { playSfx } from './audio';
+import { GameSession } from './session';
+
+export interface FeedbackSettings {
+  sound: boolean;
+  vibration: boolean;
+}
+
+const HEAR_RANGE = 1100;
+
+/** Turns game state + events into sounds and vibration for the local player. */
+export class Feedback {
+  private lastHp = -1;
+  private lastMissiles = -1;
+  private shootCd = 0;
+  private warnCd = 0;
+  private vibCd = 0;
+
+  constructor(private session: GameSession, private settings: FeedbackSettings) {}
+
+  private vib(ms: number) {
+    if (!this.settings.vibration || this.vibCd > 0) return;
+    this.vibCd = 0.12;
+    Vibration.vibrate(ms);
+  }
+
+  private sfx(name: Parameters<typeof playSfx>[0], vol = 1) {
+    if (this.settings.sound) playSfx(name, vol);
+  }
+
+  update(dt: number, events: GameEvent[], input: Input, cam: { x: number; y: number }) {
+    const w = this.session.world;
+    const myId = this.session.myId;
+    const me = w.planes.find((p) => p.id === myId);
+    this.shootCd -= dt;
+    this.warnCd -= dt;
+    this.vibCd -= dt;
+    const fade = (x: number, y: number) => Math.max(0, 1 - Math.hypot(x - cam.x, y - cam.y) / HEAR_RANGE);
+
+    for (const e of events) {
+      switch (e.t) {
+        case 'explode':
+          this.sfx('explode', (e.big ? 1 : 0.6) * fade(e.x, e.y));
+          break;
+        case 'hit':
+          if (me && Math.hypot(e.x - me.x, e.y - me.y) < 60) this.sfx('hit', 0.8);
+          break;
+        case 'pickup':
+          if (e.id === myId) this.sfx('pickup', 0.8);
+          break;
+        case 'special':
+          this.sfx('special', e.id === myId ? 0.8 : 0.6 * fade(e.x, e.y));
+          break;
+        case 'flag':
+          this.sfx(e.action === 'capture' ? 'capture' : 'flag', 0.9);
+          if (e.by === myId && (e.action === 'take' || e.action === 'capture')) this.vib(e.action === 'capture' ? 300 : 120);
+          break;
+        case 'kill':
+          if (e.victim === myId) {
+            this.vibCd = 0;
+            this.vib(450);
+          } else if (e.killer === myId) {
+            this.vib(60);
+          }
+          break;
+      }
+    }
+
+    if (!me || !me.alive) {
+      this.lastHp = -1;
+      this.lastMissiles = -1;
+      return;
+    }
+
+    // Took damage → short buzz.
+    if (this.lastHp >= 0 && me.hp < this.lastHp - 0.5) this.vib(35);
+    this.lastHp = me.hp;
+
+    // Missile launched by me.
+    if (this.lastMissiles >= 0 && me.missiles < this.lastMissiles) this.sfx('missile', 0.8);
+    this.lastMissiles = me.missiles;
+
+    // Own gunfire.
+    if (input.fire && this.shootCd <= 0) {
+      this.shootCd = 0.11;
+      this.sfx('shoot', 0.35);
+    }
+
+    // Incoming missile warning: any enemy missile close and pointed at us.
+    if (this.warnCd <= 0) {
+      for (const m of w.missiles) {
+        const d = Math.hypot(m.x - me.x, m.y - me.y);
+        if (d > 480 || d < 1) continue;
+        const toMe = Math.atan2(me.y - m.y, me.x - m.x);
+        if (Math.abs(angleDiff(m.angle, toMe)) < 0.45) {
+          this.sfx('warn', 0.7);
+          this.warnCd = 0.35;
+          break;
+        }
+      }
+    }
+  }
+}

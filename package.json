@@ -3,20 +3,41 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@shopify/react-native-skia": "2.14.0",
+    "buffer": "^6.0.3",
     "expo": "~58.0.26",
+    "expo-audio": "~58.0.12",
+    "expo-dev-client": "~58.0.21",
+    "expo-keep-awake": "~58.0.4",
+    "expo-network": "~58.0.5",
+    "expo-screen-orientation": "~58.0.4",
     "expo-status-bar": "~58.0.5",
     "react": "19.3.0",
-    "react-native": "0.88.1"
+    "react-native": "0.88.1",
+    "react-native-gesture-handler": "~3.3.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-tcp-socket": "^6.4.3",
+    "react-native-udp": "^4.1.7",
+    "react-native-worklets": "0.13.0",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.15",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "expo lint",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
   },
   "private": true
 }
