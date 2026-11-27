@@ -17,6 +17,7 @@ export interface GameSession {
   readonly world: World;
   readonly kind: 'solo' | 'host' | 'client';
   setInput(i: Input): void;
+  getInput(): Input;
   /** Advance by real elapsed seconds. Returns events since the last call (for effects, kill feed). */
   update(realDt: number): GameEvent[];
   /** Smoothed render pose for a plane. */
@@ -54,6 +55,10 @@ export class LocalSession implements GameSession {
     this.input = i;
   }
 
+  getInput(): Input {
+    return this.input;
+  }
+
   update(realDt: number): GameEvent[] {
     this.acc = Math.min(this.acc + realDt, MAX_CATCHUP);
     while (this.acc >= DT) {
@@ -81,7 +86,9 @@ export class LocalSession implements GameSession {
   pose(p: Plane): Pose {
     // Extrapolate the partial tick for smooth 60 fps rendering.
     const t = p.alive ? this.acc : 0;
-    return { x: p.x + Math.cos(p.angle) * p.speed * t, y: p.y + Math.sin(p.angle) * p.speed * t, angle: p.angle };
+    const vx = p.vx ?? (Math.cos(p.angle) * p.speed);
+    const vy = p.vy ?? (Math.sin(p.angle) * p.speed);
+    return { x: p.x + vx * t, y: p.y + vy * t, angle: p.angle };
   }
 
   extra() {
@@ -151,6 +158,10 @@ export class RemoteSession implements GameSession {
     this.input = i;
   }
 
+  getInput(): Input {
+    return this.input;
+  }
+
   update(realDt: number): GameEvent[] {
     this.sinceSnap += realDt;
     // Send input ~30 times a second.
@@ -174,7 +185,9 @@ export class RemoteSession implements GameSession {
   pose(p: Plane): Pose {
     if (p.id === this.myId && this.pred && p.alive) return { x: this.pred.x, y: this.pred.y, angle: this.pred.angle };
     const t = p.alive ? Math.min(this.sinceSnap, 0.15) : 0;
-    return { x: p.x + Math.cos(p.angle) * p.speed * t, y: p.y + Math.sin(p.angle) * p.speed * t, angle: p.angle };
+    const vx = p.vx ?? (Math.cos(p.angle) * p.speed);
+    const vy = p.vy ?? (Math.sin(p.angle) * p.speed);
+    return { x: p.x + vx * t, y: p.y + vy * t, angle: p.angle };
   }
 
   extra() {

@@ -2,10 +2,11 @@ import { useRef, useState } from 'react';
 import { GestureResponderEvent, StyleSheet, Text, View } from 'react-native';
 import { Input } from '../sim/types';
 
-const STICK_R = 60;
+const STICK_R = 65;
 const FIRE = { r: 46, side: 24, bottom: 48 };
 const MISSILE = { r: 34 };
 const SPECIAL_R = 34;
+const AUTO_R = 26;
 
 interface Props {
   width: number;
@@ -15,30 +16,59 @@ interface Props {
   specialLabel: string;
   specialCd: number; // seconds until ready
   specialMax: number;
+  autoFire?: boolean;
+  autoFiring?: boolean;
+  onToggleAutoFire?: () => void;
+  hasMissileLock?: boolean;
 }
 
 /**
- * Multi-touch controls using raw touch events:
- *  - Right side: floating joystick (direction = heading, distance = throttle).
- *  - Left side: FIRE (hold), MISSILE and SPECIAL buttons.
+ * Multi-touch controls:
+ *  - Right side: anchored fixed-base joystick with clear physical boundaries and immediate response.
+ *  - Left side: FIRE (hold), MISSILE, and SPECIAL buttons.
  */
-export function Controls({ width, height, onInput, missiles, specialLabel, specialCd, specialMax }: Props) {
+export function Controls({ width, height, onInput, missiles, specialLabel, specialCd, specialMax, autoFire = true, autoFiring = false, onToggleAutoFire, hasMissileLock = false }: Props) {
+  // Default resting position when idle
+  const defaultBase = { x: width - 105, y: height - 120 };
+
   const state = useRef({
     stickId: null as string | null,
-    origin: { x: 0, y: 0 },
-    knob: { x: 0, y: 0 },
+    base: { x: defaultBase.x, y: defaultBase.y },
+    knob: { x: defaultBase.x, y: defaultBase.y },
     fireIds: new Set<string>(),
     missileIds: new Set<string>(),
     specialIds: new Set<string>(),
-    input: { aim: null, throttle: 0.5, fire: false, missile: false, special: false } as Input,
+    input: { aim: null, throttle: 0.65, fire: false, missile: false, special: false } as Input,
   });
-  const [view, setView] = useState<{ stick: { ox: number; oy: number; kx: number; ky: number } | null; fire: boolean; missile: boolean; special: boolean }>({
-    stick: null, fire: false, missile: false, special: false,
+
+  const [view, setView] = useState<{
+    active: boolean;
+    bx: number;
+    by: number;
+    kx: number;
+    ky: number;
+    fire: boolean;
+    missile: boolean;
+    special: boolean;
+  }>({
+    active: false,
+    bx: defaultBase.x,
+    by: defaultBase.y,
+    kx: defaultBase.x,
+    ky: defaultBase.y,
+    fire: false,
+    missile: false,
+    special: false,
   });
+
   const redraw = () => {
     const s = state.current;
     setView({
-      stick: s.stickId !== null ? { ox: s.origin.x, oy: s.origin.y, kx: s.knob.x, ky: s.knob.y } : null,
+      active: s.stickId !== null,
+      bx: s.base.x,
+      by: s.base.y,
+      kx: s.knob.x,
+      ky: s.knob.y,
       fire: s.fireIds.size > 0,
       missile: s.missileIds.size > 0,
       special: s.specialIds.size > 0,
@@ -49,24 +79,25 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
   const fireC = { x: FIRE.side + FIRE.r, y: height - FIRE.bottom - FIRE.r };
   const misC = { x: fireC.x + 108, y: fireC.y + 14 };
   const spC = { x: fireC.x + 6, y: fireC.y - 108 };
+  const autoC = { x: fireC.x + 94, y: fireC.y - 72 };
   const inCircle = (x: number, y: number, c: { x: number; y: number }, r: number) => (x - c.x) ** 2 + (y - c.y) ** 2 <= (r + 18) ** 2;
 
   const emit = () => {
     const s = state.current;
     if (s.stickId !== null) {
-      const dx = s.knob.x - s.origin.x;
-      const dy = s.knob.y - s.origin.y;
-      const mag = Math.min(1, Math.hypot(dx, dy) / STICK_R);
+      const dx = s.knob.x - s.base.x;
+      const dy = s.knob.y - s.base.y;
+      const dist = Math.hypot(dx, dy);
+      const mag = Math.min(1, dist / STICK_R);
       s.input = {
-        aim: mag > 0.15 ? Math.atan2(dy, dx) : null,
-        // Light push = slow & tight turns, full push = full speed.
-        throttle: mag > 0.15 ? 0.2 + 0.8 * mag : 0.5,
+        aim: mag > 0.08 ? Math.atan2(dy, dx) : null,
+        throttle: mag > 0.08 ? 0.55 + 0.45 * Math.min(1, (mag - 0.08) / 0.75) : 0.65,
         fire: s.fireIds.size > 0,
         missile: s.missileIds.size > 0,
         special: s.specialIds.size > 0,
       };
     } else {
-      s.input = { aim: null, throttle: 0.5, fire: s.fireIds.size > 0, missile: s.missileIds.size > 0, special: s.specialIds.size > 0 };
+      s.input = { aim: null, throttle: 0.65, fire: s.fireIds.size > 0, missile: s.missileIds.size > 0, special: s.specialIds.size > 0 };
     }
     onInput(s.input);
   };
@@ -77,12 +108,14 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       const id = String(t.identifier);
       const x = t.pageX;
       const y = t.pageY;
-      if (inCircle(x, y, fireC, FIRE.r)) s.fireIds.add(id);
+      if (inCircle(x, y, autoC, AUTO_R)) onToggleAutoFire?.();
+      else if (inCircle(x, y, fireC, FIRE.r)) s.fireIds.add(id);
       else if (inCircle(x, y, misC, MISSILE.r)) s.missileIds.add(id);
       else if (inCircle(x, y, spC, SPECIAL_R)) s.specialIds.add(id);
-      else if (x > width * 0.42 && s.stickId === null) {
+      else if (s.stickId === null && (x > width * 0.32 || y < height - 190)) {
+        // Dynamic touch-down floating joystick: base spawns immediately under your finger!
         s.stickId = id;
-        s.origin = { x, y };
+        s.base = { x, y };
         s.knob = { x, y };
       }
     }
@@ -95,18 +128,19 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
     if (s.stickId === null) return;
     for (const t of e.nativeEvent.touches) {
       if (String(t.identifier) !== s.stickId) continue;
-      let dx = t.pageX - s.origin.x;
-      let dy = t.pageY - s.origin.y;
+      const dx = t.pageX - s.base.x;
+      const dy = t.pageY - s.base.y;
       const d = Math.hypot(dx, dy);
+
+      // Smooth floating stick: if user drags past stick boundary, slide the base
+      // so reversing direction is instantaneous from wherever the thumb currently is!
       if (d > STICK_R) {
-        // Drag the base along so the stick never "runs out".
-        const over = d - STICK_R;
-        s.origin.x += (dx / d) * over;
-        s.origin.y += (dy / d) * over;
-        dx = t.pageX - s.origin.x;
-        dy = t.pageY - s.origin.y;
+        s.base.x = t.pageX - (dx / d) * STICK_R;
+        s.base.y = t.pageY - (dy / d) * STICK_R;
+        s.knob = { x: t.pageX, y: t.pageY };
+      } else {
+        s.knob = { x: t.pageX, y: t.pageY };
       }
-      s.knob = { x: s.origin.x + dx, y: s.origin.y + dy };
     }
     emit();
     redraw();
@@ -119,7 +153,11 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       s.fireIds.delete(id);
       s.missileIds.delete(id);
       s.specialIds.delete(id);
-      if (id === s.stickId) s.stickId = null;
+      if (id === s.stickId) {
+        s.stickId = null;
+        s.base = { x: defaultBase.x, y: defaultBase.y };
+        s.knob = { x: defaultBase.x, y: defaultBase.y };
+      }
     }
     // Safety: if no touches remain, release everything.
     if (e.nativeEvent.touches.length === 0) {
@@ -127,6 +165,8 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       s.missileIds.clear();
       s.specialIds.clear();
       s.stickId = null;
+      s.base = { x: defaultBase.x, y: defaultBase.y };
+      s.knob = { x: defaultBase.x, y: defaultBase.y };
     }
     emit();
     redraw();
@@ -145,31 +185,106 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
       onResponderRelease={onEnd}
       onResponderTerminate={onEnd}
     >
-      {view.stick ? (
-        <>
-          <View pointerEvents="none" style={[styles.base, { left: view.stick.ox - STICK_R, top: view.stick.oy - STICK_R }]} />
-          <View pointerEvents="none" style={[styles.knob, { left: view.stick.kx - 26, top: view.stick.ky - 26 }]} />
-        </>
-      ) : (
-        <View pointerEvents="none" style={[styles.hint, { right: 24, top: height - 150 }]}>
-          <Text style={styles.hintText}>Drag to fly</Text>
-        </View>
-      )}
+      {/* Dynamic Floating Flight Joystick */}
       <View
         pointerEvents="none"
-        style={[styles.btn, { width: FIRE.r * 2, height: FIRE.r * 2, borderRadius: FIRE.r, left: fireC.x - FIRE.r, top: fireC.y - FIRE.r }, view.fire && styles.btnDown]}
+        style={[
+          styles.base,
+          {
+            left: view.bx - STICK_R,
+            top: view.by - STICK_R,
+            opacity: view.active ? 1 : 0.45,
+            borderColor: view.active ? '#4cc9f0' : 'rgba(255,255,255,0.3)',
+            backgroundColor: view.active ? 'rgba(76,201,240,0.12)' : 'rgba(0,0,0,0.22)',
+          },
+        ]}
       >
-        <Text style={styles.btnText}>FIRE</Text>
+        {/* Cardinal tick marks */}
+        <View style={[styles.tick, { top: 3, left: STICK_R - 1, width: 2, height: 7 }]} />
+        <View style={[styles.tick, { bottom: 3, left: STICK_R - 1, width: 2, height: 7 }]} />
+        <View style={[styles.tick, { left: 3, top: STICK_R - 1, width: 7, height: 2 }]} />
+        <View style={[styles.tick, { right: 3, top: STICK_R - 1, width: 7, height: 2 }]} />
+        <View style={styles.centerDot} />
+        {!view.active ? <Text style={styles.steerLabel}>TOUCH TO STEER</Text> : null}
+      </View>
+
+      {/* Dynamic knob */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.knob,
+          {
+            left: view.kx - 26,
+            top: view.ky - 26,
+            opacity: view.active ? 1 : 0.5,
+            borderColor: view.active ? '#4cc9f0' : 'rgba(255,255,255,0.7)',
+            backgroundColor: view.active ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)',
+            transform: [{ scale: view.active ? 1.08 : 0.85 }],
+          },
+        ]}
+      >
+        <View style={styles.knobInner} />
+      </View>
+      <View
+        pointerEvents="none"
+        style={[
+          styles.btn,
+          {
+            width: FIRE.r * 2,
+            height: FIRE.r * 2,
+            borderRadius: FIRE.r,
+            left: fireC.x - FIRE.r,
+            top: fireC.y - FIRE.r,
+            borderColor: autoFiring ? '#ff4d4d' : undefined,
+          },
+          (view.fire || autoFiring) && styles.btnDown,
+        ]}
+      >
+        <Text style={styles.btnText}>{autoFiring ? 'AUTO 🔥' : 'FIRE'}</Text>
+      </View>
+      {/* Auto-Fire Toggle */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.btn,
+          styles.autoBtn,
+          {
+            width: AUTO_R * 2,
+            height: AUTO_R * 2,
+            borderRadius: AUTO_R,
+            left: autoC.x - AUTO_R,
+            top: autoC.y - AUTO_R,
+            borderColor: autoFiring ? '#ff4d4d' : autoFire ? '#2ec4b6' : 'rgba(255,255,255,0.3)',
+            backgroundColor: autoFiring ? 'rgba(255,77,77,0.35)' : autoFire ? 'rgba(46,196,182,0.22)' : 'rgba(10,25,45,0.6)',
+          },
+        ]}
+      >
+        <Text style={[styles.btnTextSmall, { fontSize: 10, fontWeight: '900', color: autoFiring ? '#ff4d4d' : autoFire ? '#2ec4b6' : 'rgba(255,255,255,0.45)' }]}>
+          {autoFiring ? 'LOCK' : 'AUTO'}
+        </Text>
+        <Text style={[styles.btnTextSmall, { fontSize: 8, color: autoFiring ? '#ffb703' : autoFire ? '#2ec4b6' : 'rgba(255,255,255,0.35)' }]}>
+          {autoFiring ? 'FIRE 🔥' : autoFire ? 'ON' : 'OFF'}
+        </Text>
       </View>
       <View
         pointerEvents="none"
         style={[
           styles.btn, styles.missileBtn,
-          { width: MISSILE.r * 2, height: MISSILE.r * 2, borderRadius: MISSILE.r, left: misC.x - MISSILE.r, top: misC.y - MISSILE.r },
+          {
+            width: MISSILE.r * 2,
+            height: MISSILE.r * 2,
+            borderRadius: MISSILE.r,
+            left: misC.x - MISSILE.r,
+            top: misC.y - MISSILE.r,
+            borderColor: hasMissileLock && missiles > 0 ? '#ff3b3b' : undefined,
+            backgroundColor: hasMissileLock && missiles > 0 ? 'rgba(255,59,59,0.35)' : undefined,
+          },
           view.missile && styles.btnDown, missiles === 0 && styles.btnEmpty,
         ]}
       >
-        <Text style={styles.btnTextSmall}>MSL</Text>
+        <Text style={[styles.btnTextSmall, hasMissileLock && missiles > 0 ? { color: '#ffb703', fontWeight: '900' } : null]}>
+          {hasMissileLock && missiles > 0 ? 'LOCK 🎯' : 'MSL'}
+        </Text>
         <Text style={styles.btnTextSmall}>{missiles}</Text>
       </View>
       <View
@@ -191,11 +306,52 @@ export function Controls({ width, height, onInput, missiles, specialLabel, speci
 }
 
 const styles = StyleSheet.create({
-  base: { position: 'absolute', width: STICK_R * 2, height: STICK_R * 2, borderRadius: STICK_R, backgroundColor: 'rgba(0,0,0,0.18)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)' },
-  knob: { position: 'absolute', width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.75)' },
-  hint: { position: 'absolute', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)' },
-  hintText: { color: 'white', fontWeight: '600' },
+  base: {
+    position: 'absolute',
+    width: STICK_R * 2,
+    height: STICK_R * 2,
+    borderRadius: STICK_R,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tick: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    borderRadius: 1,
+  },
+  centerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  steerLabel: {
+    position: 'absolute',
+    bottom: STICK_R - 22,
+    color: 'rgba(255,255,255,0.35)',
+    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 1.5,
+  },
+  knob: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  knobInner: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#4cc9f0',
+    opacity: 0.85,
+  },
   btn: { position: 'absolute', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(230,57,70,0.6)', borderWidth: 3, borderColor: 'rgba(255,255,255,0.7)' },
+  autoBtn: { backgroundColor: 'rgba(10,25,45,0.65)', borderWidth: 2.2 },
   missileBtn: { backgroundColor: 'rgba(255,159,28,0.6)' },
   specialBtn: { backgroundColor: 'rgba(76,201,240,0.65)', overflow: 'hidden' },
   cdFill: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },

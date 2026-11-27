@@ -11,8 +11,8 @@ const slots: PlayerSlot[] = [
 
 function place(w: World) {
   const [a, b] = w.planes;
-  a.x = 1000; a.y = 1000; a.angle = 0;
-  b.x = 1150; b.y = 1000; b.angle = 0;
+  a.x = 1000; a.y = 1000; a.angle = 0; a.vx = a.speed; a.vy = 0;
+  b.x = 1150; b.y = 1000; b.angle = 0; b.vx = b.speed; b.vy = 0;
   a.spawnProtectUntil = 0; b.spawnProtectUntil = 0;
 }
 

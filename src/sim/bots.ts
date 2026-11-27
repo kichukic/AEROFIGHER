@@ -1,6 +1,6 @@
 import { PLANES, SPECIALS } from './planes';
 import { angleDiff, dist2 } from './math';
-import { Input, isTeamMode, Plane, World } from './types';
+import { Cloud, Input, isTeamMode, Plane, World } from './types';
 import { findLockTarget, flagAtHome } from './world';
 
 const NONE: Input = { aim: null, throttle: 0.5, fire: false, missile: false, special: false };
@@ -41,14 +41,14 @@ function goTo(w: World, me: Plane, x: number, y: number, throttle: number): Inpu
 }
 
 function enemyInSights(w: World, me: Plane): boolean {
-  const range = 600;
+  const range = 500;
   for (const o of w.planes) {
-    if (o === me || !o.alive) continue;
+    if (o === me || !o.alive || o.inCloud) continue;
     if (isTeamMode(w.config.mode) && o.team === me.team) continue;
     const d2 = dist2(me.x, me.y, o.x, o.y);
     if (d2 > range * range) continue;
     const a = Math.atan2(o.y - me.y, o.x - me.x);
-    if (Math.abs(angleDiff(me.angle, a)) < 0.15) return true;
+    if (Math.abs(angleDiff(me.angle, a)) < 0.12) return true;
   }
   return false;
 }
@@ -71,18 +71,56 @@ function nearestEnemy(w: World, me: Plane): { target: Plane | null; d2: number }
 function dogfight(w: World, me: Plane, target: Plane, d2: number): Input {
   const stats = PLANES[me.type];
   const dist = Math.sqrt(d2);
-  // Lead the target: aim where it will be when the bullet arrives.
+  const diff = w.config.botDifficulty ?? 'medium';
+
+  // Fly-by / break-off maneuver when too close to avoid awkward point-blank ramming
+  if (dist < 170) {
+    const breakDir = trait(me) > 0.5 ? 0.9 : -0.9;
+    return {
+      ...NONE,
+      aim: me.angle + breakDir,
+      throttle: 0.9,
+      fire: false,
+      missile: false,
+    };
+  }
+
+  // Difficulty-scaled aiming and combat parameters
+  const aimWobbleScale = diff === 'easy' ? 0.22 : diff === 'medium' ? 0.11 : 0.05;
+  const maxEngageDist = diff === 'easy' ? 460 : diff === 'medium' ? 540 : 620;
+  const burstDuration = diff === 'easy' ? 0.45 : diff === 'medium' ? 0.65 : 0.85;
+  const burstCyclePeriod = diff === 'easy' ? 1.6 : diff === 'medium' ? 1.4 : 1.2;
+  const missileCadence = diff === 'easy' ? 220 : diff === 'medium' ? 150 : 90;
+  const maxMissileDist = diff === 'easy' ? 620 : diff === 'medium' ? 720 : 800;
+
+  // Ballistic intercept lead prediction with human-like aiming imperfection
   const tFlight = dist / stats.bulletSpeed;
   const lx = target.x + Math.cos(target.angle) * target.speed * tFlight;
   const ly = target.y + Math.sin(target.angle) * target.speed * tFlight;
-  const aim = Math.atan2(ly - me.y, lx - me.x);
+
+  // Aim wobble: periodic slight oscillation mimicking human stick adjustment
+  const aimWobble = Math.sin(w.time * 2.8 + trait(me) * 8) * aimWobbleScale;
+  const aim = Math.atan2(ly - me.y, lx - me.x) + aimWobble;
+
   const off = Math.abs(angleDiff(me.angle, aim));
-  const jitter = (trait(me) - 0.5) * 0.12;
-  const fire = dist < 650 && off < 0.18 + jitter;
+
+  // Burst fire cycle: fire in short bursts with pauses between bursts
+  const burstPhase = (w.time * 1.5 + trait(me) * 5) % burstCyclePeriod;
+  const inBurst = burstPhase < burstDuration;
+
+  const fire = dist < maxEngageDist && off < 0.16 && inBurst;
+
+  // Missile launch with measured cadence & lock check
   const missile =
-    me.missiles > 0 && dist < 800 && off < 0.4 && findLockTarget(w, me) === target.id && (w.tick + me.id.length) % 45 === 0;
-  // Slow down when close to turn tighter; speed up when far.
-  const throttle = dist < 300 ? 0.25 : dist > 900 ? 1 : 0.65;
+    me.missiles > 0 &&
+    dist < maxMissileDist &&
+    off < 0.28 &&
+    findLockTarget(w, me) === target.id &&
+    (w.tick + me.id.length * 13) % missileCadence === 0;
+
+  // Smart throttle: throttle down during sharp turns, speed up when chasing or fleeing
+  const throttle = dist < 280 ? 0.45 : dist > 850 ? 1 : 0.7;
+
   return { ...NONE, aim, throttle, fire, missile };
 }
 
@@ -115,6 +153,20 @@ export function botInput(w: World, me: Plane): Input {
   const edge = 220;
   if (me.x < edge || me.y < edge || me.x > arenaW - edge || me.y > arenaH - edge) {
     out = { ...NONE, aim: Math.atan2(arenaH / 2 - me.y, arenaW / 2 - me.x), throttle: 0.8 };
+  }
+
+  // Dive into a cloud if targeted by a missile and no flare is available.
+  if (!out && w.missiles.some((m) => m.target === me.id) && (SPECIALS[me.type].kind !== 'flare' || me.specialCd > 0)) {
+    let bestC: Cloud | null = null;
+    let bestD = 850 * 850;
+    for (const c of w.clouds) {
+      const d = dist2(me.x, me.y, c.x, c.y);
+      if (d < bestD) {
+        bestD = d;
+        bestC = c;
+      }
+    }
+    if (bestC) out = goTo(w, me, bestC.x, bestC.y, 1);
   }
 
   // Capture the Flag objectives.

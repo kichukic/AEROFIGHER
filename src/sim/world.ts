@@ -3,6 +3,7 @@ import { MAPS } from './maps';
 import { angleDiff, clamp, dist2, rand, turnTowards, wrapAngle } from './math';
 import {
   Bullet,
+  Cloud,
   Flag,
   IDLE_INPUT,
   Input,
@@ -26,13 +27,13 @@ export const RESPAWN_DELAY = 3;
 export const SPAWN_PROTECTION = 2;
 export const ZONE_MARGIN = 350; // how far past the arena edge a plane may stray (hard clamp)
 export const ZONE_DPS = 14; // damage per second while outside the arena
-export const MISSILE_SPEED = 390;
-export const MISSILE_TURN = 2.8;
-export const MISSILE_LIFE = 3.6;
-export const MISSILE_DAMAGE = 40;
-export const MISSILE_COOLDOWN = 0.8;
-export const MISSILE_LOCK_CONE = Math.PI / 3;
-export const MISSILE_LOCK_RANGE = 900;
+export const MISSILE_SPEED = 295;
+export const MISSILE_TURN = 7.2;
+export const MISSILE_LIFE = 4.8;
+export const MISSILE_DAMAGE = 22;
+export const MISSILE_COOLDOWN = 0.5;
+export const MISSILE_LOCK_CONE = Math.PI * 0.75;
+export const MISSILE_LOCK_RANGE = 1100;
 export const PICKUP_RADIUS = 24;
 export const PICKUP_INTERVAL = 6;
 export const MAX_PICKUPS = 5;
@@ -52,12 +53,12 @@ export const FLAG_RETURN_TIME = 15;
 export const FLAG_BASE_INSET = 230;
 export const CARRIER_SPEED_MULT = 0.9;
 
-export const DEFAULT_CONFIG: MatchConfig = configFor('ffa', 'ocean');
+export const DEFAULT_CONFIG: MatchConfig = configFor('ffa', 'farmland');
 
 /** Build a match config for a mode + map, with sensible defaults. */
 export function configFor(mode: MatchConfig['mode'], map: MapId, overrides: Partial<MatchConfig> = {}): MatchConfig {
   const m = MAPS[map];
-  return { mode, map, timeLimit: 300, killLimit: 20, captureLimit: 3, ...overrides, arenaW: m.w, arenaH: m.h };
+  return { mode, map, timeLimit: 300, killLimit: 20, captureLimit: 3, botDifficulty: 'medium', ...overrides, arenaW: m.w, arenaH: m.h };
 }
 
 function rnd(w: World): number {
@@ -77,9 +78,20 @@ function newPlane(w: World, s: PlayerSlot): Plane {
   return {
     id: s.id, name: s.name, team: isTeamMode(w.config.mode) ? s.team : -1, type: s.type, isBot: s.isBot,
     x: 0, y: 0, angle: 0, speed: stats.minSpeed, hp: stats.hp, alive: true, respawnAt: 0,
+    vx: 0, vy: 0, bank: 0, hitFlashUntil: 0,
     fireCd: 0, missileCd: 0, missiles: stats.missiles, specialCd: 0, shieldUntil: 0, boostUntil: 0,
-    dashUntil: 0, flareUntil: 0, spawnProtectUntil: 0, outOfBoundsTime: 0, kills: 0, deaths: 0, caps: 0,
+    dashUntil: 0, flareUntil: 0, spawnProtectUntil: 0, outOfBoundsTime: 0, inCloud: false, kills: 0, deaths: 0, caps: 0,
   };
+}
+
+export function createClouds(config: MatchConfig): Cloud[] {
+  const out: Cloud[] = [];
+  let s = 1337;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const density = MAPS[config.map]?.cloudDensity ?? 0.45;
+  const n = Math.round(((config.arenaW * config.arenaH) / 100000) * density);
+  for (let i = 0; i < n; i++) out.push({ x: rnd() * config.arenaW, y: rnd() * config.arenaH, r: 40 + rnd() * 70 });
+  return out;
 }
 
 export function createWorld(config: MatchConfig, slots: PlayerSlot[], seed = 12345): World {
@@ -94,6 +106,7 @@ export function createWorld(config: MatchConfig, slots: PlayerSlot[], seed = 123
     pickups: [],
     flags: [],
     obstacles: map.obstacles.map((o) => ({ ...o })),
+    clouds: createClouds(config),
     nextId: 1,
     nextPickupAt: 2,
     seed,
@@ -160,6 +173,10 @@ function spawnPlane(w: World, p: Plane): void {
   // Face the arena center.
   p.angle = Math.atan2(arenaH / 2 - p.y, arenaW / 2 - p.x);
   p.speed = (stats.minSpeed + stats.maxSpeed) / 2;
+  p.vx = Math.cos(p.angle) * p.speed;
+  p.vy = Math.sin(p.angle) * p.speed;
+  p.bank = 0;
+  p.hitFlashUntil = 0;
   p.hp = stats.hp;
   p.alive = true;
   p.missiles = stats.missiles;
@@ -177,6 +194,7 @@ function damage(w: World, victim: Plane, amount: number, killerId: string | null
   if (!victim.alive) return;
   if (weapon !== 'zone' && (w.time < victim.shieldUntil || w.time < victim.spawnProtectUntil)) return;
   victim.hp -= amount;
+  victim.hitFlashUntil = w.time + 0.12;
   if (victim.hp > 0) return;
   victim.hp = 0;
   victim.alive = false;
@@ -201,11 +219,17 @@ export function speedMult(w: World, p: Plane): number {
   return m;
 }
 
-/** Pure flight model: steering, throttle and position. Shared with client-side prediction. */
+/** Pure flight model: steering, throttle, aerodynamic grip and momentum drift. Shared with client-side prediction. */
 export function movePlane(p: Plane, input: Input, dt: number, mult: number): void {
   const stats = PLANES[p.type];
   if (input.aim !== null && Number.isFinite(input.aim)) {
-    p.angle = turnTowards(p.angle, input.aim, stats.turnRate * dt);
+    const targetAngle = turnTowards(p.angle, input.aim, stats.turnRate * dt);
+    const diff = angleDiff(p.angle, targetAngle);
+    const targetBank = clamp(diff / (stats.turnRate * dt || 1e-4), -1, 1);
+    p.bank = (p.bank ?? 0) + (targetBank - (p.bank ?? 0)) * Math.min(1, dt * 14);
+    p.angle = targetAngle;
+  } else {
+    p.bank = (p.bank ?? 0) * Math.max(0, 1 - dt * 6);
   }
   const maxS = stats.maxSpeed * mult;
   // While dashing (mult >= DASH_MULT) we fly flat out regardless of throttle.
@@ -214,8 +238,17 @@ export function movePlane(p: Plane, input: Input, dt: number, mult: number): voi
   const ds = target - p.speed;
   const step = stats.accel * dt * (mult > BOOST_MULT ? 3 : 1);
   p.speed += Math.abs(ds) < step ? ds : Math.sign(ds) * step;
-  p.x += Math.cos(p.angle) * p.speed * dt;
-  p.y += Math.sin(p.angle) * p.speed * dt;
+
+  // Aerodynamic momentum & drift:
+  // Forward vector driven by current heading
+  const fX = Math.cos(p.angle) * p.speed;
+  const fY = Math.sin(p.angle) * p.speed;
+  // Wing grip smoothly aligns velocity vector to heading while allowing subtle momentum drift
+  const grip = Math.min(1, dt * 22);
+  p.vx = (p.vx ?? fX) + (fX - (p.vx ?? fX)) * grip;
+  p.vy = (p.vy ?? fY) + (fY - (p.vy ?? fY)) * grip;
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
 }
 
 /**
@@ -243,6 +276,8 @@ export function collideObstacles(p: Plane, obstacles: Obstacle[]): boolean {
     if (dot < 0) {
       p.angle = Math.atan2(vy - 2 * dot * ny, vx - 2 * dot * nx);
       p.speed *= 0.6;
+      p.vx = Math.cos(p.angle) * p.speed;
+      p.vy = Math.sin(p.angle) * p.speed;
     }
   }
   return hit;
@@ -283,8 +318,20 @@ function stepPlane(w: World, p: Plane, input: Input, dt: number): void {
   movePlane(p, input, dt, speedMult(w, p));
   if (collideObstacles(p, w.obstacles)) {
     damage(w, p, CRASH_DAMAGE, null, 'crash');
-    w.events.push({ t: 'hit', x: p.x, y: p.y });
+    w.events.push({ t: 'hit', x: p.x, y: p.y, dmg: CRASH_DAMAGE });
     if (!p.alive) return;
+  }
+
+  // Cloud concealment: breaks locks and hides plane
+  p.inCloud = false;
+  for (const c of w.clouds) {
+    if (dist2(p.x, p.y, c.x, c.y) <= (c.r + 15) ** 2) {
+      p.inCloud = true;
+      break;
+    }
+  }
+  if (p.inCloud) {
+    for (const m of w.missiles) if (m.target === p.id) m.target = null;
   }
 
   // Combat zone: outside the arena you take damage; hard clamp further out.
@@ -333,7 +380,7 @@ function stepPlane(w: World, p: Plane, input: Input, dt: number): void {
       x: p.x + Math.cos(p.angle) * (stats.radius + 6),
       y: p.y + Math.sin(p.angle) * (stats.radius + 6),
       angle: p.angle,
-      speed: Math.max(MISSILE_SPEED, p.speed + 110),
+      speed: Math.max(MISSILE_SPEED, p.speed + 45),
       target: findLockTarget(w, p),
       life: MISSILE_LIFE,
     };
@@ -345,19 +392,100 @@ function stepPlane(w: World, p: Plane, input: Input, dt: number): void {
   if (input.special && p.specialCd <= 0) activateSpecial(w, p);
 }
 
-/** Nearest enemy inside the plane's forward lock cone. Planes with active flares can't be locked. */
+/** Nearest enemy inside the plane's forward lock cone. Planes with active flares or inside clouds can't be locked. */
 export function findLockTarget(w: World, p: Plane): string | null {
   let best: string | null = null;
-  let bestD = MISSILE_LOCK_RANGE * MISSILE_LOCK_RANGE;
+  let bestScore = Infinity;
   for (const o of w.planes) {
-    if (!o.alive || !isEnemy(w, p.id, p.team, o) || w.time < o.flareUntil) continue;
+    if (!o.alive || !isEnemy(w, p.id, p.team, o) || w.time < o.flareUntil || o.inCloud) continue;
     const d = dist2(p.x, p.y, o.x, o.y);
-    if (d > bestD) continue;
+    if (d > MISSILE_LOCK_RANGE * MISSILE_LOCK_RANGE) continue;
     const a = Math.atan2(o.y - p.y, o.x - p.x);
-    if (Math.abs(angleDiff(p.angle, a)) > MISSILE_LOCK_CONE / 2) continue;
-    best = o.id;
-    bestD = d;
+    const angleOff = Math.abs(angleDiff(p.angle, a));
+    if (angleOff > MISSILE_LOCK_CONE / 2) continue;
+    // Score balances distance with angular alignment to favor targets directly ahead
+    const score = Math.sqrt(d) * (1 + angleOff * 1.25);
+    if (score < bestScore) {
+      best = o.id;
+      bestScore = score;
+    }
   }
+  return best;
+}
+
+/** Checks if a straight line between (x1, y1) and (x2, y2) intersects any map obstacle. */
+export function lineBlockedByObstacle(obstacles: Obstacle[], x1: number, y1: number, x2: number, y2: number): boolean {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return false;
+  for (const o of obstacles) {
+    const t = Math.max(0, Math.min(1, ((o.x - x1) * dx + (o.y - y1) * dy) / len2));
+    const px = x1 + t * dx;
+    const py = y1 + t * dy;
+    if ((o.x - px) ** 2 + (o.y - py) ** 2 < (o.r - 8) ** 2) return true;
+  }
+  return false;
+}
+
+export interface AutoFireTarget {
+  target: Plane;
+  dist: number;
+  inSights: boolean;
+  leadX: number;
+  leadY: number;
+}
+
+/**
+ * Searches for the best enemy target in front of the aircraft for auto-firing.
+ * Calculates ballistic intercept lead and checks whether the predicted impact
+ * point is within the plane's forward firing cone and effective bullet range.
+ */
+export function findAutoFireTarget(w: World, p: Plane): AutoFireTarget | null {
+  if (!p.alive) return null;
+  const stats = PLANES[p.type];
+  const maxRange = stats.bulletSpeed * stats.bulletLife;
+  let best: AutoFireTarget | null = null;
+  let bestScore = Infinity;
+
+  for (const o of w.planes) {
+    if (!o.alive || !isEnemy(w, p.id, p.team, o) || o.inCloud) continue;
+    const dx = o.x - p.x;
+    const dy = o.y - p.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > maxRange || dist < 1) continue;
+
+    // Ballistic intercept lead prediction based on relative velocity
+    const tFlight = dist / stats.bulletSpeed;
+    const oVx = o.vx ?? (Math.cos(o.angle) * o.speed);
+    const oVy = o.vy ?? (Math.sin(o.angle) * o.speed);
+    const leadX = o.x + oVx * tFlight;
+    const leadY = o.y + oVy * tFlight;
+
+    // Check if flight path of bullets is blocked by an obstacle
+    if (lineBlockedByObstacle(w.obstacles, p.x, p.y, leadX, leadY)) continue;
+
+    const angleToLead = Math.atan2(leadY - p.y, leadX - p.x);
+    const leadOff = Math.abs(angleDiff(p.angle, angleToLead));
+
+    const angleToDirect = Math.atan2(dy, dx);
+    const directOff = Math.abs(angleDiff(p.angle, angleToDirect));
+
+    // Tolerance is wider at close range (0.22 rad ≈ 12.6°) and tighter at long range (0.13 rad ≈ 7.4°)
+    const tolerance = Math.max(0.13, 0.22 - (dist / maxRange) * 0.09);
+    const inSights = leadOff < tolerance || (dist < 280 && directOff < tolerance * 1.2);
+
+    // Score combines angular offset and distance to pick the most immediate threat
+    const score = Math.min(leadOff, directOff) * 1.4 + (dist / maxRange);
+
+    if (inSights || score < bestScore) {
+      if (!best || (inSights && !best.inSights) || (inSights === best.inSights && score < bestScore)) {
+        best = { target: o, dist, inSights, leadX, leadY };
+        bestScore = score;
+      }
+    }
+  }
+
   return best;
 }
 
@@ -380,7 +508,11 @@ function stepProjectiles(w: World, dt: number): void {
       const r = PLANES[p.type].radius;
       if (dist2(b.x, b.y, p.x, p.y) <= r * r) {
         damage(w, p, b.dmg, b.owner, b.flak ? 'flak' : 'gun');
-        w.events.push({ t: 'hit', x: b.x, y: b.y });
+        // Kinetic micro-impulse from projectile impact
+        const bSpd = Math.hypot(b.vx, b.vy) || 1;
+        p.vx = (p.vx ?? 0) + (b.vx / bSpd) * 16;
+        p.vy = (p.vy ?? 0) + (b.vy / bSpd) * 16;
+        w.events.push({ t: 'hit', x: b.x, y: b.y, dmg: b.dmg });
         hit = true;
         break;
       }
@@ -393,12 +525,56 @@ function stepProjectiles(w: World, dt: number): void {
   const keptM: Missile[] = [];
   for (const m of w.missiles) {
     m.life -= dt;
-    const target = m.target ? planes.find((p) => p.id === m.target && p.alive) : undefined;
-    if (target && w.time < target.flareUntil) m.target = null;
-    else if (target) {
-      const a = Math.atan2(target.y - m.y, target.x - m.x);
-      m.angle = turnTowards(m.angle, a, MISSILE_TURN * dt);
+    let target = m.target ? planes.find((p) => p.id === m.target && p.alive) : undefined;
+    if (target && (w.time < target.flareUntil || target.inCloud)) {
+      m.target = null;
+      target = undefined;
     }
+
+    // In-flight seeker head: if missile has no target, acquire nearest visible enemy ahead
+    if (!target) {
+      let bestDist = 950 * 950;
+      let bestPlane: Plane | undefined = undefined;
+      for (const p of planes) {
+        if (!p.alive || !isEnemy(w, m.owner, m.team, p) || w.time < p.flareUntil || p.inCloud) continue;
+        const d = dist2(m.x, m.y, p.x, p.y);
+        if (d > bestDist) continue;
+        const a = Math.atan2(p.y - m.y, p.x - m.x);
+        if (Math.abs(angleDiff(m.angle, a)) > (Math.PI * 0.8) / 2) continue;
+        bestPlane = p;
+        bestDist = d;
+      }
+      if (bestPlane) {
+        m.target = bestPlane.id;
+        target = bestPlane;
+      }
+    }
+
+    if (target) {
+      const dist = Math.hypot(target.x - m.x, target.y - m.y);
+      let desired: number;
+      if (dist < 260) {
+        // Direct pure pursuit when closing in - locks straight onto aircraft position
+        desired = Math.atan2(target.y - m.y, target.x - m.x);
+      } else {
+        // Predictive lead pursuit when distant
+        const tLead = Math.min(0.45, dist / Math.max(1, m.speed));
+        const targetVx = target.vx ?? (Math.cos(target.angle) * target.speed);
+        const targetVy = target.vy ?? (Math.sin(target.angle) * target.speed);
+        const leadX = target.x + targetVx * tLead;
+        const leadY = target.y + targetVy * tLead;
+        desired = Math.atan2(leadY - m.y, leadX - m.x);
+      }
+      // Tight homing turn rate that sharpens to ~9 rad/s in close dogfight range
+      const turnRate = dist < 220 ? MISSILE_TURN * 1.25 : MISSILE_TURN;
+      m.angle = turnTowards(m.angle, desired, turnRate * dt);
+    }
+
+    // Settle speed towards steady missile cruising speed
+    if (m.speed > MISSILE_SPEED) {
+      m.speed = Math.max(MISSILE_SPEED, m.speed - dt * 60);
+    }
+
     m.x += Math.cos(m.angle) * m.speed * dt;
     m.y += Math.sin(m.angle) * m.speed * dt;
     if (m.life <= 0 || insideObstacle(w.obstacles, m.x, m.y, 0)) {
@@ -411,6 +587,15 @@ function stepProjectiles(w: World, dt: number): void {
       const r = PLANES[p.type].radius + 6;
       if (dist2(m.x, m.y, p.x, p.y) <= r * r) {
         damage(w, p, MISSILE_DAMAGE, m.owner, 'missile');
+        p.speed *= 0.88; // shockwave impact slows victim momentarily
+        // Heavy kinetic knockback impulse pushing along missile velocity vector
+        const pushImpulse = 140;
+        p.vx = (p.vx ?? 0) + Math.cos(m.angle) * pushImpulse;
+        p.vy = (p.vy ?? 0) + Math.sin(m.angle) * pushImpulse;
+        // Explosive blast jolt rocks the aircraft wings
+        const joltDir = Math.sin(m.angle - p.angle) >= 0 ? 0.75 : -0.75;
+        p.bank = clamp((p.bank ?? 0) + joltDir, -1, 1);
+        w.events.push({ t: 'hit', x: m.x, y: m.y, dmg: MISSILE_DAMAGE });
         w.events.push({ t: 'explode', x: m.x, y: m.y, big: false });
         hit = true;
         break;

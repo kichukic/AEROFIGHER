@@ -23,6 +23,23 @@ export interface MapDef {
 }
 
 export const MAPS: Record<MapId, MapDef> = {
+  farmland: {
+    id: 'farmland',
+    label: 'Green Farmland',
+    description: 'Rolling crop fields, dirt roads, and trees',
+    w: 3200,
+    h: 2200,
+    cloudDensity: 0.35,
+    palette: {
+      sky: '#4f8c38', grid: 'rgba(255,255,255,0.06)', cloud: 'rgba(255,255,255,0.55)', zone: 'rgba(180,30,30,0.28)',
+      border: 'rgba(255,60,60,0.9)', rock: '#5a4632', rockEdge: '#3a2b1c', rockTop: '#8a7258',
+    },
+    obstacles: [
+      { x: 800, y: 600, r: 80 },
+      { x: 2400, y: 1600, r: 80 },
+      { x: 1600, y: 500, r: 85 },
+    ],
+  },
   ocean: {
     id: 'ocean',
     label: 'Open Ocean',
@@ -110,4 +127,4 @@ export const MAPS: Record<MapId, MapDef> = {
   },
 };
 
-export const MAP_IDS: MapId[] = ['ocean', 'desert', 'arctic', 'canyon', 'night'];
+export const MAP_IDS: MapId[] = ['farmland', 'ocean', 'desert', 'arctic', 'canyon', 'night'];

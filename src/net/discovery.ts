@@ -1,7 +1,7 @@
 import dgram from 'react-native-udp';
 import { Buffer } from 'buffer';
 import { DISCOVERY_PORT, DISCOVERY_TAG, DiscoveryMsg, PROTOCOL_VERSION } from './protocol';
-import { broadcastTargets } from './localIp';
+import { broadcastTargets, discoveryTargets } from './localIp';
 
 type UdpSocket = ReturnType<typeof dgram.createSocket> & {
   on(event: string, cb: (...args: any[]) => void): void;
@@ -32,22 +32,35 @@ function parse(msg: Buffer | string): DiscoveryMsg | null {
 function openSocket(port: number, onMessage: (m: DiscoveryMsg, r: RInfo) => void): Promise<UdpSocket> {
   return new Promise((resolve, reject) => {
     const sock = dgram.createSocket({ type: 'udp4', reusePort: true }) as UdpSocket;
-    let bound = false;
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(sock);
+      }
+    }, 2500);
     sock.on('message', (data: Buffer, rinfo: RInfo) => {
       const m = parse(data);
       if (m) onMessage(m, rinfo);
     });
     sock.on('error', (err: Error) => {
-      if (!bound) reject(err);
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      }
     });
     sock.bind(port, () => {
-      bound = true;
-      try {
-        sock.setBroadcast(true);
-      } catch {
-        // some devices throw if already set
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        try {
+          sock.setBroadcast(true);
+        } catch {
+          // some devices throw if already set
+        }
+        resolve(sock);
       }
-      resolve(sock);
     });
   });
 }
@@ -107,7 +120,7 @@ export async function startScanner(onChange: (games: FoundGame[]) => void) {
   }
   const probe: DiscoveryMsg = { tag: DISCOVERY_TAG, t: 'probe', v: PROTOCOL_VERSION };
   const tick = async () => {
-    for (const t of await broadcastTargets()) send(sock, probe, DISCOVERY_PORT, t);
+    for (const t of await discoveryTargets()) send(sock, probe, DISCOVERY_PORT, t);
     const now = Date.now();
     let changed = false;
     for (const [k, g] of games) if (now - g.lastSeen > 4000) { games.delete(k); changed = true; }

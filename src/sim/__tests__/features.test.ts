@@ -1,5 +1,5 @@
 /// <reference types="jest" />
-import { configFor, createWorld, step, DT, FLAG_RETURN_TIME } from '../world';
+import { configFor, createWorld, findAutoFireTarget, findLockTarget, step, DT, FLAG_RETURN_TIME } from '../world';
 import { botInput } from '../bots';
 import { IDLE_INPUT, Input, PlayerSlot, World } from '../types';
 import { PLANES, SPECIALS } from '../planes';
@@ -14,8 +14,9 @@ const go = (o: Partial<Input> = {}): Input => ({ ...IDLE_INPUT, ...o });
 
 function park(w: World) {
   const [a, b] = w.planes;
-  a.x = 1000; a.y = 1000; a.angle = 0; a.spawnProtectUntil = 0;
-  b.x = 2000; b.y = 1000; b.angle = Math.PI; b.spawnProtectUntil = 0;
+  a.x = 1000; a.y = 1000; a.angle = 0; a.vx = a.speed; a.vy = 0; a.spawnProtectUntil = 0;
+  b.x = 2000; b.y = 1000; b.angle = Math.PI; b.vx = -b.speed; b.vy = 0; b.spawnProtectUntil = 0;
+  w.clouds = [];
 }
 
 describe('special abilities', () => {
@@ -168,5 +169,136 @@ describe('capture the flag', () => {
       w.events = [];
     }
     expect(w.teamScores[0] + w.teamScores[1]).toBeGreaterThan(0);
+  });
+});
+
+describe('tactical clouds', () => {
+  test('entering a cloud breaks active missile lock and prevents new locks', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    // Place a cloud over plane a
+    w.clouds = [{ x: 1000, y: 1000, r: 80 }];
+    w.planes[1].x = 1500;
+    // b fires a missile towards a
+    step(w, { b: go({ aim: Math.PI, missile: true }) });
+    expect(w.planes[0].inCloud).toBe(true);
+    expect(findLockTarget(w, w.planes[1])).toBeNull();
+    expect(w.missiles[0].target).toBeNull();
+  });
+
+  test('cloud stealth flag survives snapshot synchronization', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two());
+    park(w);
+    w.clouds = [{ x: 1000, y: 1000, r: 80 }];
+    step(w, {});
+    expect(w.planes[0].inCloud).toBe(true);
+    const mirror = createWorld(w.config, two());
+    applySnapshot(mirror, JSON.parse(JSON.stringify(encodeSnapshot(w))));
+    expect(mirror.planes[0].inCloud).toBe(true);
+  });
+});
+
+describe('auto-fire targeting', () => {
+  test('detects enemy in front within range and flags inSights', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    w.planes[1].x = 1350; w.planes[1].y = 1000; w.planes[1].angle = Math.PI;
+
+    const res = findAutoFireTarget(w, w.planes[0]);
+    expect(res).not.toBeNull();
+    expect(res!.target.id).toBe('b');
+    expect(res!.inSights).toBe(true);
+    expect(res!.dist).toBeCloseTo(350, 0);
+  });
+
+  test('does not auto-fire at teammates in team modes', () => {
+    const w = createWorld(configFor('tdm', 'ocean'), [
+      { id: 'a', name: 'A', team: 0, type: 'fighter', isBot: false },
+      { id: 'ally', name: 'Ally', team: 0, type: 'fighter', isBot: false },
+    ]);
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    w.planes[1].x = 1300; w.planes[1].y = 1000;
+
+    expect(findAutoFireTarget(w, w.planes[0])).toBeNull();
+  });
+
+  test('does not target enemies hidden in clouds', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    w.planes[1].x = 1350; w.planes[1].y = 1000;
+    w.clouds = [{ x: 1350, y: 1000, r: 80 }];
+    step(w, {});
+
+    expect(w.planes[1].inCloud).toBe(true);
+    expect(findAutoFireTarget(w, w.planes[0])).toBeNull();
+  });
+
+  test('does not auto-fire through obstacles', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    w.planes[1].x = 1400; w.planes[1].y = 1000;
+    w.obstacles = [{ x: 1200, y: 1000, r: 60 }];
+
+    expect(findAutoFireTarget(w, w.planes[0])).toBeNull();
+  });
+
+  test('returns inSights false when enemy is out of angular firing cone', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    w.planes[1].x = 1000; w.planes[1].y = 1400;
+
+    const res = findAutoFireTarget(w, w.planes[0]);
+    expect(res === null || res.inSights === false).toBe(true);
+  });
+});
+
+describe('true homing missiles', () => {
+  test('missile actively curves towards and tracks target', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    w.planes[1].x = 1350; w.planes[1].y = 1200; // offset at ~30 degrees
+    w.planes[0].missiles = 1;
+    // Launch missile with lock
+    step(w, { a: go({ missile: true }) });
+    expect(w.missiles.length).toBe(1);
+    const m = w.missiles[0];
+    expect(m.target).toBe(w.planes[1].id);
+    const initialAngle = m.angle;
+
+    // Step forward several frames
+    for (let i = 0; i < 10; i++) step(w, {});
+
+    // Missile must have turned towards target (angle increased towards target's positive Y)
+    expect(m.angle).toBeGreaterThan(initialAngle);
+  });
+
+  test('in-flight seeker acquires target for unguided missile', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    w.planes[0].x = 1000; w.planes[0].y = 1000; w.planes[0].angle = 0;
+    w.planes[1].x = 1400; w.planes[1].y = 1050;
+
+    // Manually inject unguided missile
+    w.missiles.push({
+      id: 999,
+      owner: 'a',
+      team: 0,
+      x: 1050,
+      y: 1000,
+      angle: 0,
+      speed: 295,
+      target: null,
+      life: 4,
+    });
+
+    step(w, {});
+    // Seeker must have locked onto enemy plane b
+    expect(w.missiles[0].target).toBe(w.planes[1].id);
   });
 });

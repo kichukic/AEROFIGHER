@@ -218,6 +218,7 @@ let common: {
   flameOuter: SkPaint;
   flameInner: SkPaint;
   nozzle: SkPaint;
+  hitFlash: SkPaint;
 } | null = null;
 
 function getCommon() {
@@ -238,17 +239,19 @@ function getCommon() {
     flameOuter: fill('#ff8a1c', 0.85),
     flameInner: fill('#fff3b0', 0.95),
     nozzle: fill('#2b2b2b'),
+    hitFlash: fill('#ffffff', 0.8),
   };
   return common;
 }
 
 /** Soft drop shadow (draw before all planes so shadows sit underneath). */
-export function drawPlaneShadow(canvas: SkCanvas, type: PlaneType, x: number, y: number, angle: number, scale: number) {
+export function drawPlaneShadow(canvas: SkCanvas, type: PlaneType, x: number, y: number, angle: number, scale: number, bank: number = 0) {
   const t = paintsFor(type);
   canvas.save();
   canvas.translate(x + scale * 0.7, y + scale * 1.0);
   canvas.rotate((angle * 180) / Math.PI, 0, 0);
-  canvas.scale(scale * 0.95, scale * 0.95);
+  const bankFactor = 1 - Math.abs(bank) * 0.22;
+  canvas.scale(scale * 0.95, scale * 0.95 * bankFactor);
   canvas.drawPath(t.d.silhouette, getCommon().shadow);
   canvas.restore();
 }
@@ -256,7 +259,7 @@ export function drawPlaneShadow(canvas: SkCanvas, type: PlaneType, x: number, y:
 /** Draw a plane. `throttle` (0..1) drives the jet flame; `time` animates propellers and flicker. */
 export function drawPlane(
   canvas: SkCanvas, type: PlaneType, x: number, y: number, angle: number, scale: number,
-  color: string, throttle: number, time: number,
+  color: string, throttle: number, time: number, bank: number = 0, isHit: boolean = false,
 ) {
   const t = paintsFor(type);
   const d = t.d;
@@ -266,7 +269,8 @@ export function drawPlane(
   canvas.save();
   canvas.translate(x, y);
   canvas.rotate((angle * 180) / Math.PI, 0, 0);
-  canvas.scale(scale, scale);
+  const bankFactor = 1 - Math.abs(bank) * 0.28;
+  canvas.scale(scale, scale * bankFactor);
 
   // Jet flame behind everything.
   const flicker = 0.85 + Math.sin(time * 45 + x) * 0.15;
@@ -346,6 +350,11 @@ export function drawPlane(
     }
     canvas.drawCircle(px, py, type === 'bomber' ? 0.06 : 0.085, acc.fill);
     canvas.drawCircle(px, py, type === 'bomber' ? 0.06 : 0.085, c.frame);
+  }
+
+  // 10) Damage hit flash
+  if (isHit) {
+    canvas.drawPath(d.silhouette, c.hitFlash);
   }
 
   canvas.restore();

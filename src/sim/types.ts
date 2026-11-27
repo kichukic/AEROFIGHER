@@ -1,7 +1,7 @@
 export type PlaneType = 'interceptor' | 'fighter' | 'bomber';
 export type GameMode = 'ffa' | 'tdm' | 'ctf';
 export type PickupKind = 'repair' | 'shield' | 'missiles' | 'boost';
-export type MapId = 'ocean' | 'desert' | 'arctic' | 'canyon' | 'night';
+export type MapId = 'farmland' | 'ocean' | 'desert' | 'arctic' | 'canyon' | 'night';
 export type SpecialKind = 'dash' | 'flare' | 'flak';
 export type Weapon = 'gun' | 'missile' | 'zone' | 'crash' | 'flak';
 
@@ -26,6 +26,9 @@ export interface Plane {
   y: number;
   angle: number;
   speed: number;
+  vx: number;
+  vy: number;
+  bank: number;
   hp: number;
   alive: boolean;
   respawnAt: number; // world time when the plane respawns (if dead)
@@ -38,6 +41,7 @@ export interface Plane {
   dashUntil: number;
   flareUntil: number;
   spawnProtectUntil: number;
+  hitFlashUntil: number;
   outOfBoundsTime: number;
   inCloud: boolean;
   kills: number;
@@ -104,11 +108,13 @@ export type FlagAction = 'take' | 'drop' | 'return' | 'capture';
 export type GameEvent =
   | { t: 'kill'; killer: string | null; victim: string; weapon: Weapon }
   | { t: 'explode'; x: number; y: number; big: boolean }
-  | { t: 'hit'; x: number; y: number }
+  | { t: 'hit'; x: number; y: number; dmg?: number }
   | { t: 'pickup'; id: string; kind: PickupKind }
   | { t: 'special'; id: string; kind: SpecialKind; x: number; y: number }
   | { t: 'flag'; team: number; action: FlagAction; by: string | null }
   | { t: 'end'; winner: string | null; winnerTeam: number | null };
+
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface MatchConfig {
   mode: GameMode;
@@ -118,6 +124,7 @@ export interface MatchConfig {
   captureLimit: number;
   arenaW: number;
   arenaH: number;
+  botDifficulty?: BotDifficulty;
 }
 
 export interface World {

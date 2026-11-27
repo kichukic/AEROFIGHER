@@ -41,7 +41,7 @@ export class HostServer {
     this.lobby = {
       hostName,
       config: { ...DEFAULT_CONFIG },
-      bots: 0,
+      bots: 1,
       players: [{ id: 'host', name: hostName, team: 0, type: hostType, ready: true, isBot: false, isHost: true }],
     };
   }
@@ -52,22 +52,31 @@ export class HostServer {
 
   async start(): Promise<void> {
     await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Host socket bind timed out')), 4000);
       const server = TcpSocket.createServer({ noDelay: true, keepAlive: true }, (sock) => this.onConnection(sock as Sock));
       server.on('error', (e: Error) => {
+        clearTimeout(timer);
         this.listeners.onError?.(String(e?.message ?? e));
         reject(e);
       });
-      server.listen({ port: GAME_PORT, host: '0.0.0.0', reuseAddress: true }, () => resolve());
+      server.listen({ port: GAME_PORT, host: '0.0.0.0', reuseAddress: true }, () => {
+        clearTimeout(timer);
+        resolve();
+      });
       this.server = server;
     });
-    this.stopAnnouncer = await startAnnouncer(() => ({
-      name: this.lobby.hostName,
-      mode: this.lobby.config.mode,
-      players: this.humanCount(),
-      max: MAX_PLAYERS,
-      port: GAME_PORT,
-      open: !this.inMatch && this.humanCount() < MAX_PLAYERS,
-    }));
+    try {
+      this.stopAnnouncer = await startAnnouncer(() => ({
+        name: this.lobby.hostName,
+        mode: this.lobby.config.mode,
+        players: this.humanCount(),
+        max: MAX_PLAYERS,
+        port: GAME_PORT,
+        open: !this.inMatch && this.humanCount() < MAX_PLAYERS,
+      }));
+    } catch {
+      // UDP discovery failed to bind; TCP game hosting is still functional
+    }
   }
 
   stop(reason = 'Host closed the game') {

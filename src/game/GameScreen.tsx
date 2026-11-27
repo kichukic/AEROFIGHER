@@ -9,6 +9,7 @@ import { Controls } from './Controls';
 import { Hud, KillFeedItem } from './Hud';
 import { drawFrame, FxSystem } from './render';
 import { Feedback } from './feedback';
+import { findAutoFireTarget, findLockTarget } from '../sim/world';
 
 const END_DELAY = 2.5;
 
@@ -23,11 +24,18 @@ export function GameScreen() {
   const [hudTick, setHudTick] = useState(0);
   const [feedView, setFeedView] = useState<KillFeedItem[]>([]);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [autoFire, setAutoFire] = useState(true);
+  const [autoFiring, setAutoFiring] = useState(false);
+  const autoFireRef = useRef(true);
+  const autoFiringRef = useRef(false);
   const feed = useRef<KillFeedItem[]>([]);
   const size = useRef({ width, height });
   useEffect(() => {
     size.current = { width, height };
   }, [width, height]);
+  useEffect(() => {
+    autoFireRef.current = autoFire;
+  }, [autoFire]);
 
   useEffect(() => {
     if (!session) return;
@@ -50,7 +58,21 @@ export function GameScreen() {
       const name = (id: string | null) => (id ? w.planes.find((p) => p.id === id)?.name ?? '?' : null);
       const teamName = (t: number) => (t === 0 ? 'BLUE' : 'RED');
       for (const e of events) {
-        if (e.t === 'explode' && e.big && Math.hypot(e.x - cam.x, e.y - cam.y) < 500) shake = Math.max(shake, 9);
+        if (e.t === 'hit') {
+          const dist = Math.hypot(e.x - cam.x, e.y - cam.y);
+          if (dist < 80) {
+            const impact = Math.min(18, (e.dmg ?? 10) * 0.9);
+            shake = Math.max(shake, impact);
+          }
+        }
+        if (e.t === 'explode') {
+          const dist = Math.hypot(e.x - cam.x, e.y - cam.y);
+          if (dist < 420) {
+            const prox = 1 - dist / 420;
+            const blastShake = (e.big ? 18 : 9) * prox;
+            shake = Math.max(shake, blastShake);
+          }
+        }
         if (e.t === 'flag' && e.action !== 'drop') {
           const who = name(e.by);
           const verb = e.action === 'take' ? 'took' : e.action === 'capture' ? 'CAPTURED' : 'returned';
@@ -83,10 +105,27 @@ export function GameScreen() {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       time += dt;
+
+      // Auto-Fire target evaluation for player's plane
+      const mePlane = session.world.planes.find((p) => p.id === session.myId);
+      if (mePlane && mePlane.alive) {
+        const autoTarget = autoFireRef.current ? findAutoFireTarget(session.world, mePlane) : null;
+        const inSights = autoTarget?.inSights ?? false;
+        if (inSights !== autoFiringRef.current) {
+          autoFiringRef.current = inSights;
+          setAutoFiring(inSights);
+        }
+        const shouldFire = inputRef.current.fire || inSights;
+        const curInput = session.getInput();
+        if (curInput.fire !== shouldFire) {
+          session.setInput({ ...curInput, fire: shouldFire });
+        }
+      }
+
       const events = session.update(dt);
       handleEvents(events);
       feedback.update(dt, events, inputRef.current, cam);
-      fx.update(dt);
+      fx.update(dt, session.world.planes);
 
       // Camera follows our plane smoothly.
       const me = session.world.planes.find((p) => p.id === session.myId);
@@ -95,12 +134,16 @@ export function GameScreen() {
         const k = 1 - Math.exp(-dt * 8);
         cam.x += (pose.x - cam.x) * k;
         cam.y += (pose.y - cam.y) * k;
-        if (lastHp >= 0 && me.hp < lastHp - 0.5) shake = Math.max(shake, 5);
+        if (lastHp >= 0 && me.hp < lastHp - 0.5) {
+          const dmg = lastHp - me.hp;
+          const hpShake = dmg >= 20 ? 16 : dmg >= 10 ? 11 : 6;
+          shake = Math.max(shake, hpShake);
+        }
         lastHp = me.hp;
       } else {
         lastHp = -1;
       }
-      shake = Math.max(0, shake - dt * 30);
+      shake = Math.max(0, shake - dt * 25);
       const view = shake > 0 ? { x: cam.x + (Math.random() - 0.5) * shake * 2, y: cam.y + (Math.random() - 0.5) * shake * 2 } : cam;
 
       const { width: vw, height: vh } = size.current;
@@ -146,9 +189,16 @@ export function GameScreen() {
           specialLabel={me ? SPECIALS[me.type].label : ''}
           specialCd={me?.specialCd ?? 0}
           specialMax={me ? SPECIALS[me.type].cooldown : 1}
+          autoFire={autoFire}
+          autoFiring={autoFiring}
+          hasMissileLock={me ? findLockTarget(session.world, me) !== null : false}
+          onToggleAutoFire={() => setAutoFire((v) => !v)}
           onInput={(i: Input) => {
             inputRef.current = i;
-            session.setInput(i);
+            const mePlane = session.world.planes.find((p) => p.id === session.myId);
+            const autoTarget = autoFireRef.current && mePlane ? findAutoFireTarget(session.world, mePlane) : null;
+            const shouldFire = i.fire || (autoTarget?.inSights ?? false);
+            session.setInput({ ...i, fire: shouldFire });
           }}
         />
       ) : null}

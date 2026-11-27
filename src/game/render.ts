@@ -2,9 +2,10 @@ import { matchFont, PaintStyle, Skia, SkCanvas, SkFont, SkPaint, SkPath, StrokeC
 import { PLANES } from '../sim/planes';
 import { GameEvent, isTeamMode, PickupKind, Plane, PlaneType, World } from '../sim/types';
 import { MAPS, MapPalette } from '../sim/maps';
-import { FLAG_RADIUS } from '../sim/world';
+import { findAutoFireTarget, findLockTarget, FLAG_RADIUS } from '../sim/world';
 import { GameSession } from './session';
 import { drawPlane, drawPlaneShadow } from './planeArt';
+import { drawGroundTerrain, drawTrees, getTerrain } from './terrainArt';
 
 // ---------- Palette (placeholder art; swap when reference art arrives) ----------
 export const COLORS = {
@@ -103,11 +104,15 @@ function getCache() {
       fx: paint('#ffb703'),
       fxSmoke: paint('#444444'),
       spark: paint('#fff3b0'),
+      sparkStreak: paint('#ffeedd', 2.2),
       miniBg: paint('#0b1d33', 0, 0.55),
       miniBorder: paint('#ffffff', 1.5, 0.6),
       arrow: paint('#ffffff'),
       lock: paint('#ff4d4d', 2),
       pole: paint('#ffffff', 3),
+      aimLine: paint('#4cc9f0', 2, 0.45),
+      aimChevron: paint('#4cc9f0', 2.5, 0.85),
+      aimGlow: paint('#4cc9f0', 0, 0.25),
     },
   };
   return cache;
@@ -142,36 +147,112 @@ interface Fx {
   y: number;
   age: number;
   life: number;
-  kind: 'boom' | 'smallboom' | 'spark' | 'flare' | 'flak' | 'dash';
+  kind: 'boom' | 'smallboom' | 'spark' | 'flare' | 'flak' | 'dash' | 'dmgText' | 'smokePuff' | 'fireEmber';
+  vx?: number;
+  vy?: number;
+  text?: string;
+  color?: string;
+  radius?: number;
 }
 
 export class FxSystem {
   list: Fx[] = [];
+  private smokeTimer = 0;
+
   push(events: GameEvent[]) {
     for (const e of events) {
-      if (e.t === 'explode') this.list.push({ x: e.x, y: e.y, age: 0, life: e.big ? 0.9 : 0.45, kind: e.big ? 'boom' : 'smallboom' });
-      else if (e.t === 'hit') this.list.push({ x: e.x, y: e.y, age: 0, life: 0.18, kind: 'spark' });
-      else if (e.t === 'special') this.list.push({ x: e.x, y: e.y, age: 0, life: e.kind === 'flare' ? 1.0 : 0.4, kind: e.kind });
+      if (e.t === 'explode') {
+        this.list.push({ x: e.x, y: e.y, age: 0, life: e.big ? 0.9 : 0.45, kind: e.big ? 'boom' : 'smallboom' });
+      } else if (e.t === 'hit') {
+        // High-velocity armor spark shower in all directions
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.7;
+          const spd = 110 + Math.random() * 180;
+          this.list.push({
+            x: e.x,
+            y: e.y,
+            age: 0,
+            life: 0.18 + Math.random() * 0.14,
+            kind: 'spark',
+            vx: Math.cos(a) * spd,
+            vy: Math.sin(a) * spd,
+          });
+        }
+        // Floating combat damage numbers with upward drift
+        if (e.dmg && e.dmg >= 1) {
+          const dmgVal = Math.round(e.dmg);
+          const color = dmgVal >= 25 ? '#ff4d4d' : dmgVal >= 14 ? '#ffb703' : '#ffffff';
+          this.list.push({
+            x: e.x + (Math.random() - 0.5) * 14,
+            y: e.y - 8,
+            age: 0,
+            life: 0.7,
+            kind: 'dmgText',
+            text: `-${dmgVal}`,
+            vx: (Math.random() - 0.5) * 20,
+            vy: -48 - Math.random() * 18,
+            color,
+          });
+        }
+      } else if (e.t === 'special') {
+        this.list.push({ x: e.x, y: e.y, age: 0, life: e.kind === 'flare' ? 1.0 : 0.4, kind: e.kind });
+      }
     }
-    if (this.list.length > 120) this.list.splice(0, this.list.length - 120);
+    if (this.list.length > 220) this.list.splice(0, this.list.length - 220);
   }
-  update(dt: number) {
-    for (const f of this.list) f.age += dt;
-    this.list = this.list.filter((f) => f.age < f.life);
-  }
-}
 
-// Deterministic clouds so every device sees the same sky.
-function makeClouds(w: World) {
-  const out: { x: number; y: number; r: number }[] = [];
-  let s = 1337;
-  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  const density = MAPS[w.config.map]?.cloudDensity ?? 0.45;
-  const n = Math.round(((w.config.arenaW * w.config.arenaH) / 100000) * density);
-  for (let i = 0; i < n; i++) out.push({ x: rnd() * w.config.arenaW, y: rnd() * w.config.arenaH, r: 40 + rnd() * 70 });
-  return out;
+  update(dt: number, planes?: Plane[]) {
+    for (const f of this.list) {
+      f.age += dt;
+      if (f.vx) f.x += f.vx * dt;
+      if (f.vy) f.y += f.vy * dt;
+    }
+    this.list = this.list.filter((f) => f.age < f.life);
+
+    // Persistent lingering smoke & fire trails left behind by damaged aircraft
+    if (planes) {
+      this.smokeTimer += dt;
+      if (this.smokeTimer >= 0.05) {
+        this.smokeTimer = 0;
+        for (const p of planes) {
+          if (!p.alive) continue;
+          const st = PLANES[p.type];
+          const frac = p.hp / st.hp;
+          if (frac < 0.5) {
+            const behindX = p.x - Math.cos(p.angle) * st.radius;
+            const behindY = p.y - Math.sin(p.angle) * st.radius;
+            // Lingering billowing smoke puff
+            this.list.push({
+              x: behindX + (Math.random() - 0.5) * 6,
+              y: behindY + (Math.random() - 0.5) * 6,
+              age: 0,
+              life: 0.85 + Math.random() * 0.4,
+              kind: 'smokePuff',
+              vx: (Math.random() - 0.5) * 14,
+              vy: (Math.random() - 0.5) * 14,
+              radius: 8 + (1 - frac) * 10,
+            });
+
+            // Critical HP fire ember trail
+            if (frac < 0.25) {
+              this.list.push({
+                x: behindX + (Math.random() - 0.5) * 8,
+                y: behindY + (Math.random() - 0.5) * 8,
+                age: 0,
+                life: 0.35 + Math.random() * 0.2,
+                kind: 'fireEmber',
+                vx: (Math.random() - 0.5) * 22,
+                vy: (Math.random() - 0.5) * 22,
+                radius: 4 + Math.random() * 3,
+              });
+            }
+          }
+        }
+      }
+    }
+    if (this.list.length > 220) this.list.splice(0, this.list.length - 220);
+  }
 }
-let cloudCache: { key: string; clouds: { x: number; y: number; r: number }[] } | null = null;
 
 function drawFlag(canvas: SkCanvas, x: number, y: number, color: string, time: number, c: ReturnType<typeof getCache>) {
   // Pole
@@ -215,17 +296,17 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
   canvas.drawRect(Skia.XYWHRect(-m, -m, arenaW + 2 * m, arenaH + 2 * m), mp.zone);
   canvas.drawRect(Skia.XYWHRect(0, 0, arenaW, arenaH), mp.sky);
 
-  // Grid gives a sense of speed.
-  const g = 200;
-  const x0 = Math.floor((cam.x - wvw / 2) / g) * g;
-  const y0 = Math.floor((cam.y - wvh / 2) / g) * g;
-  for (let x = x0; x < cam.x + wvw / 2 + g; x += g) canvas.drawLine(x, cam.y - wvh, x, cam.y + wvh, mp.grid);
-  for (let y = y0; y < cam.y + wvh / 2 + g; y += g) canvas.drawLine(cam.x - wvw, y, cam.x + wvw, y, mp.grid);
-
-  canvas.drawRect(Skia.XYWHRect(0, 0, arenaW, arenaH), mp.border);
-
   const visible = (x: number, y: number, pad: number) =>
     Math.abs(x - cam.x) < wvw / 2 + pad && Math.abs(y - cam.y) < wvh / 2 + pad;
+
+  // 2D Ground: Patchwork crop fields, dirt roads, and military airstrip runway
+  const terrain = getTerrain(w.config.map, arenaW, arenaH);
+  drawGroundTerrain(canvas, terrain, visible, mapDef.palette, w.config.map);
+
+  // 2D Trees & Forest groves (with soft drop shadows, lush foliage, and sunlit leaf highlights)
+  drawTrees(canvas, terrain.trees, visible, w.config.map);
+
+  canvas.drawRect(Skia.XYWHRect(0, 0, arenaW, arenaH), mp.border);
 
   // Rocks / mountains (solid)
   for (const o of w.obstacles) {
@@ -283,13 +364,35 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
     const mx = mi.x + Math.cos(mi.angle) * mi.speed * ex;
     const my = mi.y + Math.sin(mi.angle) * mi.speed * ex;
     if (!visible(mx, my, 40)) continue;
-    for (let i = 1; i <= 4; i++) {
-      canvas.drawCircle(mx - Math.cos(mi.angle) * i * 9, my - Math.sin(mi.angle) * i * 9, 5 - i * 0.8, c.p.trail);
+
+    // Billowing expanding smoke trail
+    for (let i = 1; i <= 6; i++) {
+      const puffX = mx - Math.cos(mi.angle) * i * 11;
+      const puffY = my - Math.sin(mi.angle) * i * 11;
+      c.p.trail.setAlphaf(Math.max(0, 0.48 - i * 0.07));
+      canvas.drawCircle(puffX, puffY, 3 + i * 0.9, c.p.trail);
     }
+    c.p.trail.setAlphaf(0.35);
+
+    // Rocket motor exhaust plume
+    const tailX = mx - Math.cos(mi.angle) * 8;
+    const tailY = my - Math.sin(mi.angle) * 8;
+    c.p.fx.setAlphaf(0.85);
+    canvas.drawCircle(tailX, tailY, 4, c.p.fx);
+    c.p.spark.setAlphaf(0.95);
+    canvas.drawCircle(tailX, tailY, 2, c.p.spark);
+
+    // Missile body with fins and nose cone
     canvas.save();
     canvas.translate(mx, my);
     canvas.rotate((mi.angle * 180) / Math.PI, 0, 0);
+    // Main fuselage
     canvas.drawRect(Skia.XYWHRect(-8, -2.5, 16, 5), c.p.missile);
+    // Nose cone
+    canvas.drawCircle(8, 0, 2.5, c.p.missile);
+    // Rear steering fins
+    canvas.drawLine(-7, -4.5, -3, -2.5, c.p.bullet);
+    canvas.drawLine(-7, 4.5, -3, 2.5, c.p.bullet);
     canvas.restore();
   }
 
@@ -299,7 +402,7 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
     if (!p.alive) continue;
     const pose = s.pose(p);
     if (!visible(pose.x, pose.y, 80)) continue;
-    drawPlaneShadow(canvas, p.type, pose.x, pose.y, pose.angle, PLANES[p.type].radius * ART_SCALE);
+    drawPlaneShadow(canvas, p.type, pose.x, pose.y, pose.angle, PLANES[p.type].radius * ART_SCALE, p.bank ?? 0);
   }
   for (const p of w.planes) {
     if (!p.alive) continue;
@@ -311,10 +414,131 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
       c.p.trail.setAlphaf(0.18);
       canvas.drawCircle(pose.x, pose.y, st.radius * 1.9, c.p.trail);
       c.p.trail.setAlphaf(0.35);
+
+      // Visual Flight Path Guide & Aim Chevron
+      const myInput = s.getInput ? s.getInput() : null;
+      if (myInput && myInput.aim !== null && Number.isFinite(myInput.aim)) {
+        const aimAngle = myInput.aim;
+        const noseDist = st.radius + 6;
+        const chevronDist = noseDist + 78;
+        const targetX = pose.x + Math.cos(aimAngle) * chevronDist;
+        const targetY = pose.y + Math.sin(aimAngle) * chevronDist;
+
+        // Glowing trajectory line forward to target heading
+        const midX = pose.x + Math.cos(aimAngle) * (noseDist + 40);
+        const midY = pose.y + Math.sin(aimAngle) * (noseDist + 40);
+        canvas.drawLine(pose.x + Math.cos(aimAngle) * noseDist, pose.y + Math.sin(aimAngle) * noseDist, midX, midY, c.p.aimLine);
+
+        // Holographic chevron pointing along commanded heading
+        canvas.save();
+        canvas.translate(targetX, targetY);
+        canvas.rotate((aimAngle * 180) / Math.PI, 0, 0);
+
+        // Soft glow halo
+        canvas.drawCircle(0, 0, 14, c.p.aimGlow);
+
+        // Twin aerodynamic chevrons
+        canvas.drawLine(-8, -9, 4, 0, c.p.aimChevron);
+        canvas.drawLine(-8, 9, 4, 0, c.p.aimChevron);
+        canvas.drawLine(-14, -7, -3, 0, c.p.aimLine);
+        canvas.drawLine(-14, 7, -3, 0, c.p.aimLine);
+
+        canvas.restore();
+      }
+
+      // Auto-Fire / Lead Targeting Reticle for local player
+      const autoTarget = findAutoFireTarget(w, p);
+      if (autoTarget) {
+        const tgt = autoTarget.target;
+        const tPose = s.pose(tgt);
+        const rad = PLANES[tgt.type].radius + 8;
+        const inSights = autoTarget.inSights;
+
+        // Color: Fiery Red when in sights & firing, Cyan when tracking
+        const reticlePaint = inSights ? c.p.lock : c.p.aimLine;
+        const pulse = 1 + Math.sin(time * 16) * 0.08;
+
+        // 4 corner targeting brackets around enemy
+        const bLen = 8;
+        const r = rad * pulse;
+        // Top-Left
+        canvas.drawLine(tPose.x - r, tPose.y - r + bLen, tPose.x - r, tPose.y - r, reticlePaint);
+        canvas.drawLine(tPose.x - r, tPose.y - r, tPose.x - r + bLen, tPose.y - r, reticlePaint);
+        // Top-Right
+        canvas.drawLine(tPose.x + r, tPose.y - r + bLen, tPose.x + r, tPose.y - r, reticlePaint);
+        canvas.drawLine(tPose.x + r, tPose.y - r, tPose.x + r - bLen, tPose.y - r, reticlePaint);
+        // Bottom-Left
+        canvas.drawLine(tPose.x - r, tPose.y + r - bLen, tPose.x - r, tPose.y + r, reticlePaint);
+        canvas.drawLine(tPose.x - r, tPose.y + r, tPose.x - r + bLen, tPose.y + r, reticlePaint);
+        // Bottom-Right
+        canvas.drawLine(tPose.x + r, tPose.y + r - bLen, tPose.x + r, tPose.y + r, reticlePaint);
+        canvas.drawLine(tPose.x + r, tPose.y + r, tPose.x + r - bLen, tPose.y + r, reticlePaint);
+
+        // Lead intercept pip
+        canvas.drawCircle(autoTarget.leadX, autoTarget.leadY, inSights ? 4.5 : 3, reticlePaint);
+        if (inSights) {
+          canvas.drawCircle(autoTarget.leadX, autoTarget.leadY, 7, c.p.aimGlow);
+        }
+      }
+
+      // Dedicated Missile Lock Reticle
+      const mLockTargetId = findLockTarget(w, p);
+      if (mLockTargetId) {
+        const mTarget = w.planes.find((pl) => pl.id === mLockTargetId);
+        if (mTarget && mTarget.alive) {
+          const mtPose = s.pose(mTarget);
+          const mRad = (PLANES[mTarget.type].radius + 14) * (1 + Math.sin(time * 18) * 0.08);
+          // Pulsing lock diamond [ ⟐ ]
+          canvas.save();
+          canvas.translate(mtPose.x, mtPose.y);
+          // Diamond reticle lines
+          canvas.drawLine(0, -mRad, mRad, 0, c.p.lock);
+          canvas.drawLine(mRad, 0, 0, mRad, c.p.lock);
+          canvas.drawLine(0, mRad, -mRad, 0, c.p.lock);
+          canvas.drawLine(-mRad, 0, 0, -mRad, c.p.lock);
+          // Inner crosshairs
+          canvas.drawLine(-mRad * 0.45, 0, mRad * 0.45, 0, c.p.lock);
+          canvas.drawLine(0, -mRad * 0.45, 0, mRad * 0.45, c.p.lock);
+          canvas.restore();
+          // Text label
+          canvas.drawText('LOCK 🎯', mtPose.x - 24, mtPose.y + mRad + 14, c.p.lock, c.smallFont);
+        }
+      }
+
+      // Incoming Missile Alert on player
+      const incomingMissile = w.missiles.find((m) => m.target === p.id);
+      if (incomingMissile) {
+        const blink = Math.sin(time * 24) > 0;
+        if (blink) {
+          canvas.drawText('⚠️ MISSILE ALERT', pose.x - 48, pose.y - st.radius - 24, c.p.hpLow, c.smallFont);
+        }
+      }
     }
     if (!protectedBlink) {
       const thr = Math.max(0, Math.min(1, (p.speed - st.minSpeed) / (st.maxSpeed - st.minSpeed)));
-      drawPlane(canvas, p.type, pose.x, pose.y, pose.angle, st.radius * ART_SCALE, planeColor(w, p, s.myId), thr, time);
+      const isHit = w.time < (p.hitFlashUntil ?? 0);
+      drawPlane(canvas, p.type, pose.x, pose.y, pose.angle, st.radius * ART_SCALE, planeColor(w, p, s.myId), thr, time, p.bank ?? 0, isHit);
+    }
+    // Low-HP distress smoke & engine fire trails
+    const bw = 40;
+    const frac = Math.max(0, p.hp / st.hp);
+    if (frac < 0.5) {
+      const behindX = pose.x - Math.cos(pose.angle) * st.radius;
+      const behindY = pose.y - Math.sin(pose.angle) * st.radius;
+      const smokeP = Math.sin(time * 14 + p.x) * 4;
+      c.p.fxSmoke.setAlphaf(0.5);
+      canvas.drawCircle(behindX + smokeP, behindY, 8 + (1 - frac) * 12, c.p.fxSmoke);
+      if (frac < 0.25) {
+        const fireP = Math.cos(time * 30 + p.y) * 3;
+        c.p.fx.setAlphaf(0.85);
+        canvas.drawCircle(behindX + fireP, behindY, 6, c.p.fx);
+        c.p.spark.setAlphaf(0.9);
+        canvas.drawCircle(behindX - fireP, behindY, 3, c.p.spark);
+      }
+    }
+    if (p.inCloud) {
+      c.p.cloud.setAlphaf(0.38);
+      canvas.drawCircle(pose.x, pose.y, st.radius * 1.8, c.p.cloud);
     }
     if (w.time < p.shieldUntil) canvas.drawCircle(pose.x, pose.y, st.radius + 10, c.p.shield);
     if (w.time < p.dashUntil) {
@@ -327,8 +551,6 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
     const carried = w.flags.find((f) => f.carrier === p.id);
     if (carried) drawFlag(canvas, pose.x - Math.cos(pose.angle) * st.radius, pose.y - Math.sin(pose.angle) * st.radius, COLORS.team[carried.team], time, c);
     // HP bar + name
-    const bw = 40;
-    const frac = Math.max(0, p.hp / st.hp);
     canvas.drawRect(Skia.XYWHRect(pose.x - bw / 2, pose.y - st.radius - 14, bw, 5), c.p.hpBg);
     canvas.drawRect(Skia.XYWHRect(pose.x - bw / 2, pose.y - st.radius - 14, bw * frac, 5), frac < 0.35 ? c.p.hpLow : c.p.hpFg);
     if (p.id !== s.myId) {
@@ -339,9 +561,7 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
   }
 
   // Clouds above planes (partially transparent)
-  const key = `${w.config.map}-${arenaW}x${arenaH}`;
-  if (!cloudCache || cloudCache.key !== key) cloudCache = { key, clouds: makeClouds(w) };
-  for (const cl of cloudCache.clouds) {
+  for (const cl of w.clouds) {
     if (!visible(cl.x, cl.y, cl.r * 2)) continue;
     canvas.drawCircle(cl.x, cl.y, cl.r, mp.cloud);
     canvas.drawCircle(cl.x + cl.r * 0.7, cl.y + cl.r * 0.2, cl.r * 0.7, mp.cloud);
@@ -368,8 +588,33 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
       canvas.drawCircle(f.x, f.y, 15 + t * 40, c.p.trail);
       c.p.trail.setAlphaf(0.35);
     } else if (f.kind === 'spark') {
-      c.p.spark.setAlphaf(1 - t);
-      canvas.drawCircle(f.x, f.y, 4 + t * 6, c.p.spark);
+      const alpha = Math.max(0, 1 - t);
+      c.p.spark.setAlphaf(alpha);
+      c.p.sparkStreak.setAlphaf(alpha * 0.85);
+      const tailX = f.x - (f.vx ?? 0) * 0.024;
+      const tailY = f.y - (f.vy ?? 0) * 0.024;
+      canvas.drawLine(tailX, tailY, f.x, f.y, c.p.sparkStreak);
+      canvas.drawCircle(f.x, f.y, 2.8 * (1 - t * 0.5), c.p.spark);
+    } else if (f.kind === 'smokePuff') {
+      const alpha = Math.max(0, (1 - t) * 0.45);
+      c.p.fxSmoke.setAlphaf(alpha);
+      const rad = (f.radius ?? 10) * (1 + t * 1.6);
+      canvas.drawCircle(f.x, f.y, rad, c.p.fxSmoke);
+    } else if (f.kind === 'fireEmber') {
+      const alpha = Math.max(0, 1 - t);
+      c.p.fx.setAlphaf(alpha * 0.85);
+      canvas.drawCircle(f.x, f.y, (f.radius ?? 5) * (1 - t * 0.35), c.p.fx);
+      c.p.spark.setAlphaf(alpha);
+      canvas.drawCircle(f.x, f.y, (f.radius ?? 5) * 0.35, c.p.spark);
+    } else if (f.kind === 'dmgText' && f.text) {
+      const alpha = Math.max(0, 1 - (t * t));
+      const font = c.smallFont;
+      const tw = font.measureText(f.text).width;
+      const pText = fillFor(f.color ?? '#ffffff');
+      pText.setAlphaf(alpha);
+      c.p.textShadow.setAlphaf(alpha * 0.7);
+      canvas.drawText(f.text, f.x - tw / 2 + 1, f.y + 1, c.p.textShadow, font);
+      canvas.drawText(f.text, f.x - tw / 2, f.y, pText, font);
     } else {
       const big = f.kind === 'boom' ? 1 : 0.5;
       c.p.fxSmoke.setAlphaf((1 - t) * 0.5);
@@ -382,10 +627,10 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
   canvas.restore();
 
   // ---------- Screen-space overlays ----------
-  // Off-screen enemy arrows
+  // Off-screen enemy arrows (clouds hide radar signature)
   const me = w.planes.find((p) => p.id === s.myId);
   for (const p of w.planes) {
-    if (p.id === s.myId || !p.alive) continue;
+    if (p.id === s.myId || !p.alive || p.inCloud) continue;
     if (isTeamMode(w.config.mode) && me && p.team === me.team) continue;
     const pose = s.pose(p);
     const dx = (pose.x - cam.x) * zoom;
@@ -421,6 +666,7 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
   }
   for (const p of w.planes) {
     if (!p.alive) continue;
+    if (p.inCloud && p.id !== s.myId && (!me || p.team !== me.team)) continue;
     const pose = s.pose(p);
     canvas.drawCircle(mmX + pose.x * sx, mmY + pose.y * sy, p.id === s.myId ? 4.5 : 3.5, fillFor(planeColor(w, p, s.myId)));
   }

@@ -63,7 +63,7 @@ export interface Snapshot {
   end?: { w: string | null; wt: number | null };
 }
 
-const F_ALIVE = 1, F_SHIELD = 2, F_BOOST = 4, F_PROTECT = 8, F_OOB = 16, F_DASH = 32, F_FLARE = 64;
+const F_ALIVE = 1, F_SHIELD = 2, F_BOOST = 4, F_PROTECT = 8, F_OOB = 16, F_DASH = 32, F_FLARE = 64, F_IN_CLOUD = 128;
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -78,7 +78,7 @@ export function encodeSnapshot(w: World): Snapshot {
       p.id, r1(p.x), r1(p.y), r3(p.angle), r1(p.speed), Math.ceil(p.hp),
       (p.alive ? F_ALIVE : 0) | (t < p.shieldUntil ? F_SHIELD : 0) | (t < p.boostUntil ? F_BOOST : 0) |
         (t < p.spawnProtectUntil ? F_PROTECT : 0) | (p.outOfBoundsTime > 0 ? F_OOB : 0) |
-        (t < p.dashUntil ? F_DASH : 0) | (t < p.flareUntil ? F_FLARE : 0),
+        (t < p.dashUntil ? F_DASH : 0) | (t < p.flareUntil ? F_FLARE : 0) | (p.inCloud ? F_IN_CLOUD : 0),
       p.kills, p.deaths, p.missiles, r1(p.specialCd), p.caps,
     ]),
     B: w.bullets.map((b) => [b.id, r1(b.x), r1(b.y), r1(b.vx), r1(b.vy)]),
@@ -103,6 +103,10 @@ export function applySnapshot(w: World, s: Snapshot): void {
     if (!p) continue;
     const flags = sp[6];
     p.x = sp[1]; p.y = sp[2]; p.angle = sp[3]; p.speed = sp[4]; p.hp = sp[5];
+    p.vx = Math.cos(p.angle) * p.speed;
+    p.vy = Math.sin(p.angle) * p.speed;
+    p.bank = p.bank ?? 0;
+    p.hitFlashUntil = p.hitFlashUntil ?? 0;
     p.alive = (flags & F_ALIVE) !== 0;
     p.shieldUntil = flags & F_SHIELD ? far : 0;
     p.boostUntil = flags & F_BOOST ? far : 0;
@@ -110,6 +114,7 @@ export function applySnapshot(w: World, s: Snapshot): void {
     p.outOfBoundsTime = flags & F_OOB ? 1 : 0;
     p.dashUntil = flags & F_DASH ? far : 0;
     p.flareUntil = flags & F_FLARE ? far : 0;
+    p.inCloud = (flags & F_IN_CLOUD) !== 0;
     p.kills = sp[7]; p.deaths = sp[8]; p.missiles = sp[9]; p.specialCd = sp[10] ?? 0; p.caps = sp[11] ?? 0;
   }
   // Planes that left the match.

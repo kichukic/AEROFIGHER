@@ -4,7 +4,7 @@ import { ClientConnection } from '../net/client';
 import { LobbyState } from '../net/protocol';
 import { GameSession, LocalSession, RemoteSession } from '../game/session';
 import { configFor, standings } from '../sim/world';
-import { GameMode, MapId, MatchConfig, Plane, PlaneType, PlayerSlot } from '../sim/types';
+import { BotDifficulty, GameMode, MapId, MatchConfig, Plane, PlaneType, PlayerSlot } from '../sim/types';
 
 export type Screen = 'home' | 'solo' | 'hostLobby' | 'join' | 'clientLobby' | 'game' | 'results';
 
@@ -66,6 +66,7 @@ export interface SoloOptions {
   timeLimit: number;
   killLimit: number;
   captureLimit: number;
+  difficulty?: BotDifficulty;
 }
 
 let lastSolo: SoloOptions | null = null;
@@ -73,7 +74,12 @@ let lastSolo: SoloOptions | null = null;
 export function startSolo(opts: SoloOptions) {
   lastSolo = opts;
   const { playerName, planeType } = get();
-  const config: MatchConfig = configFor(opts.mode, opts.map, { timeLimit: opts.timeLimit, killLimit: opts.killLimit, captureLimit: opts.captureLimit });
+  const config: MatchConfig = configFor(opts.mode, opts.map, {
+    timeLimit: opts.timeLimit,
+    killLimit: opts.killLimit,
+    captureLimit: opts.captureLimit,
+    botDifficulty: opts.difficulty ?? 'medium',
+  });
   const slots: PlayerSlot[] = [{ id: 'me', name: playerName, team: 0, type: planeType, isBot: false }];
   const types: PlaneType[] = ['fighter', 'interceptor', 'bomber'];
   const names = ['Viper', 'Falcon', 'Ghost', 'Raptor', 'Hawk', 'Talon', 'Blaze'];

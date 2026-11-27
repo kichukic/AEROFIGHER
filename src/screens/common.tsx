@@ -5,6 +5,12 @@ import { GameMode, isTeamMode, MapId, PlaneType } from '../sim/types';
 import { LobbyPlayer } from '../net/protocol';
 import { Segmented, styles, theme } from './ui';
 
+const PLANE_ICONS: Record<PlaneType, string> = {
+  interceptor: '⚡',
+  fighter: '⚔️',
+  bomber: '🛡️',
+};
+
 export function PlanePicker({ value, onChange }: { value: PlaneType; onChange: (t: PlaneType) => void }) {
   return (
     <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
@@ -16,18 +22,25 @@ export function PlanePicker({ value, onChange }: { value: PlaneType; onChange: (
             key={t}
             onPress={() => onChange(t)}
             style={{
-              flex: 1, padding: 8, borderRadius: 10, borderWidth: 2,
-              borderColor: active ? theme.accent : 'transparent', backgroundColor: theme.bg,
+              flex: 1, padding: 10, borderRadius: 12, borderWidth: 2,
+              borderColor: active ? theme.accent : 'rgba(255,255,255,0.08)',
+              backgroundColor: active ? 'rgba(255,210,63,0.1)' : theme.panel,
+              shadowColor: active ? theme.accent : 'transparent',
+              shadowOpacity: active ? 0.3 : 0,
+              shadowRadius: 8,
             }}
           >
-            <Text style={{ color: active ? theme.accent : theme.text, fontWeight: '900' }}>{s.label}</Text>
-            <Text style={[styles.dim, { fontSize: 11 }]}>{s.description}</Text>
-            <Stat label="SPD" v={s.maxSpeed / 250} />
-            <Stat label="TURN" v={s.turnRate / 3.3} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+              <Text style={{ color: active ? theme.accent : theme.text, fontWeight: '900', fontSize: 13 }}>{s.label}</Text>
+              <Text style={{ fontSize: 14 }}>{PLANE_ICONS[t]}</Text>
+            </View>
+            <Text style={[styles.dim, { fontSize: 10, marginBottom: 4 }]} numberOfLines={1}>{s.description}</Text>
+            <Stat label="SPD" v={s.maxSpeed / 280} />
+            <Stat label="TURN" v={s.turnRate / 5.2} />
             <Stat label="HP" v={s.hp / 160} />
-            <Stat label="DMG" v={s.bulletDamage / s.fireInterval / 80} />
-            <Text style={{ color: '#4cc9f0', fontSize: 10, fontWeight: '900', marginTop: 4 }}>{SPECIALS[t].label}</Text>
-            <Text style={[styles.dim, { fontSize: 10 }]}>{SPECIALS[t].description}</Text>
+            <Stat label="DMG" v={s.bulletDamage / s.fireInterval / 75} />
+            <Text style={{ color: theme.cyan, fontSize: 10, fontWeight: '900', marginTop: 6 }}>{SPECIALS[t].label}</Text>
+            <Text style={[styles.dim, { fontSize: 9 }]} numberOfLines={2}>{SPECIALS[t].description}</Text>
           </Pressable>
         );
       })}

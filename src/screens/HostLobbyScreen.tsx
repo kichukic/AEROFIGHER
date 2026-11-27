@@ -23,6 +23,13 @@ export function HostLobbyScreen() {
   const allReady = lobby.players.every((p) => p.ready);
   const cfg = lobby.config;
 
+  const handleStart = () => {
+    if (humans + lobby.bots < 2) {
+      host.setBots(1);
+    }
+    hostStartMatch();
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ gap: 16, paddingBottom: 40 }}>
       <View>
@@ -31,10 +38,20 @@ export function HostLobbyScreen() {
         <Panel style={{ marginBottom: 12 }}>
           <Text style={styles.label}>Players ({humans}/{MAX_PLAYERS})</Text>
           <PlayerList players={lobby.players} bots={lobby.bots} mode={cfg.mode} myId="host" />
-          <Text style={[styles.dim, { marginTop: 10 }]}>
-            Friends: connect to this phone’s hotspot, then tap JOIN GAME. The game shows up automatically.
-            {ip ? `  Manual IP: ${ip}` : ''}
-          </Text>
+          <View style={{ marginTop: 10, backgroundColor: theme.panelLight, borderRadius: 8, padding: 10 }}>
+            <Text style={[styles.text, { fontSize: 13, fontWeight: '700', color: theme.accent }]}>
+              📡 Hotspot Hosting Guide
+            </Text>
+            <Text style={[styles.dim, { fontSize: 12, marginTop: 4 }]}>
+              1. Turn on this phone’s Personal Hotspot.
+            </Text>
+            <Text style={[styles.dim, { fontSize: 12, marginTop: 2 }]}>
+              2. Friends connect to this hotspot & open Join Game.
+            </Text>
+            <Text style={[styles.text, { fontSize: 12, marginTop: 4, color: theme.text }]}>
+              {ip ? `Your IP: ${ip}` : 'Hotspot Host IP: 192.168.43.1 (default Android) or 172.20.10.1 (iOS)'}
+            </Text>
+          </View>
         </Panel>
         <Panel>
           <Segmented label="Mode" value={cfg.mode} onChange={(mode) => host.setConfig({ mode })} options={MODE_OPTIONS} />
@@ -60,12 +77,17 @@ export function HostLobbyScreen() {
           }}
         />
         {!allReady ? <Text style={[styles.dim, { marginBottom: 8, color: theme.accent }]}>Waiting for all players to be ready…</Text> : null}
+        {humans === 1 && lobby.bots === 0 ? (
+          <Text style={[styles.dim, { marginBottom: 8, color: theme.accent }]}>
+            Tip: Press Start to launch with bots, or wait for friends to join.
+          </Text>
+        ) : null}
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <Button title="CLOSE" kind="danger" onPress={leaveToHome} style={{ flex: 1 }} />
           <Button
             title="START BATTLE"
-            disabled={!allReady || humans + lobby.bots < 2}
-            onPress={hostStartMatch}
+            disabled={!allReady}
+            onPress={handleStart}
             style={{ flex: 2 }}
           />
         </View>
