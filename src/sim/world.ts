@@ -632,7 +632,7 @@ function stepProjectiles(w: World, dt: number): void {
         const bSpd = Math.hypot(b.vx, b.vy) || 1;
         p.vx = (p.vx ?? 0) + (b.vx / bSpd) * 16;
         p.vy = (p.vy ?? 0) + (b.vy / bSpd) * 16;
-        w.events.push({ t: 'hit', x: b.x, y: b.y, dmg: b.dmg });
+        w.events.push({ t: 'hit', x: b.x, y: b.y, dmg: b.dmg, victim: p.id, dirX: b.vx / bSpd, dirY: b.vy / bSpd });
         hit = true;
         break;
       }
@@ -728,7 +728,7 @@ function stepProjectiles(w: World, dt: number): void {
         // Explosive blast jolt rocks the aircraft wings
         const joltDir = Math.sin(m.angle - p.angle) >= 0 ? 0.75 : -0.75;
         p.bank = clamp((p.bank ?? 0) + joltDir, -1, 1);
-        w.events.push({ t: 'hit', x: m.x, y: m.y, dmg: MISSILE_DAMAGE });
+        w.events.push({ t: 'hit', x: m.x, y: m.y, dmg: MISSILE_DAMAGE, victim: p.id, dirX: Math.cos(m.angle), dirY: Math.sin(m.angle) });
         w.events.push({ t: 'explode', x: m.x, y: m.y, big: false });
         hit = true;
         break;

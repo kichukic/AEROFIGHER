@@ -8,6 +8,7 @@ import { SPECIALS } from '../sim/planes';
 import { Controls } from './Controls';
 import { Hud, KillFeedItem } from './Hud';
 import { drawFrame, FxSystem } from './render';
+import { startBgm, stopBgm } from './audio';
 import { Feedback } from './feedback';
 import { findAutoFireTarget, findLockTarget } from '../sim/world';
 
@@ -42,6 +43,8 @@ export function GameScreen() {
 
   useEffect(() => {
     if (!session) return;
+    if (sound) startBgm(0.2);
+    else stopBgm();
     const fx = new FxSystem();
     const feedback = new Feedback(session, { sound, vibration });
     let shake = 0;
@@ -56,7 +59,7 @@ export function GameScreen() {
 
     const handleEvents = (events: GameEvent[]) => {
       if (!events.length) return;
-      fx.push(events);
+      fx.push(events, session.myId);
       const w = session.world;
       const name = (id: string | null) => (id ? w.planes.find((p) => p.id === id)?.name ?? '?' : null);
       const teamName = (t: number) => (t === 0 ? 'BLUE' : 'RED');
@@ -134,7 +137,7 @@ export function GameScreen() {
       const events = session.update(dt);
       handleEvents(events);
       feedback.update(dt, events, inputRef.current, cam);
-      fx.update(dt, session.world.planes, session.world.clouds);
+      fx.update(dt, session.world.planes, session.world.clouds, session.world.time);
 
       // Camera follows our plane smoothly.
       const me = session.world.planes.find((p) => p.id === session.myId);
@@ -179,6 +182,7 @@ export function GameScreen() {
     raf = requestAnimationFrame(frame);
     return () => {
       running = false;
+      stopBgm();
       cancelAnimationFrame(raf);
     };
   }, [session, sound, vibration]);

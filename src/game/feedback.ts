@@ -1,8 +1,16 @@
 import { Vibration } from 'react-native';
 import { angleDiff } from '../sim/math';
-import { GameEvent, Input } from '../sim/types';
-import { playSfx } from './audio';
+import { PLANES } from '../sim/planes';
+import { GameEvent, Input, PlaneType } from '../sim/types';
+import { findLockTarget } from '../sim/world';
+import { playSfx, Sfx } from './audio';
 import { GameSession } from './session';
+
+function gunSfxFor(type: PlaneType): Sfx {
+  if (type === 'interceptor' || type === 'stealth') return 'shoot_laser';
+  if (type === 'bomber' || type === 'gunship') return 'shoot_heavy';
+  return 'shoot';
+}
 
 export interface FeedbackSettings {
   sound: boolean;
@@ -15,6 +23,7 @@ const HEAR_RANGE = 1100;
 export class Feedback {
   private lastHp = -1;
   private lastMissiles = -1;
+  private lastLockTarget: string | null = null;
   private shootCd = 0;
   private warnCd = 0;
   private vibCd = 0;
@@ -79,7 +88,8 @@ export class Feedback {
             this.vibCd = 0;
             this.vib(450);
           } else if (e.killer === myId) {
-            this.vib(60);
+            this.sfx('kill', 0.9);
+            this.vib(75);
           }
           break;
       }
@@ -88,6 +98,7 @@ export class Feedback {
     if (!me || !me.alive) {
       this.lastHp = -1;
       this.lastMissiles = -1;
+      this.lastLockTarget = null;
       return;
     }
 
@@ -96,13 +107,21 @@ export class Feedback {
     this.lastHp = me.hp;
 
     // Missile launched by me.
-    if (this.lastMissiles >= 0 && me.missiles < this.lastMissiles) this.sfx('missile', 0.8);
+    if (this.lastMissiles >= 0 && me.missiles < this.lastMissiles) this.sfx('missile', 0.85);
     this.lastMissiles = me.missiles;
 
-    // Own gunfire.
-    if (input.fire && this.shootCd <= 0) {
-      this.shootCd = 0.11;
-      this.sfx('shoot', 0.35);
+    // Radar missile lock acquired chime.
+    const lockId = me.missiles > 0 ? findLockTarget(w, me) : null;
+    if (lockId && lockId !== this.lastLockTarget) {
+      this.sfx('lock', 0.55);
+    }
+    this.lastLockTarget = lockId;
+
+    // Own gunfire (manual or auto-fire), scaled to aircraft fire interval & weapon type.
+    const isFiring = input.fire || this.session.getInput().fire;
+    if (isFiring && this.shootCd <= 0) {
+      this.shootCd = Math.max(0.08, PLANES[me.type].fireInterval);
+      this.sfx(gunSfxFor(me.type), 0.34);
     }
 
     // Incoming missile warning: any enemy missile close and pointed at us.

@@ -334,10 +334,17 @@ export interface GroundCrater {
   life: number;
 }
 
+export interface HitArc {
+  angle: number; // angle pointing toward the attacker
+  age: number;
+  life: number;
+}
+
 export class FxSystem {
   list: Fx[] = [];
   craters: GroundCrater[] = [];
   wakes: CloudWake[] = [];
+  hitArcs: HitArc[] = [];
   planeMoisture: Record<string, number> = {};
   private smokeTimer = 0;
   private wakeDropTimer = 0;
@@ -375,7 +382,7 @@ export class FxSystem {
     return [dispX, dispY];
   }
 
-  push(events: GameEvent[]) {
+  push(events: GameEvent[], myId?: string) {
     for (const e of events) {
       if (e.t === 'explode') {
         const isGround = Boolean(e.ground);
@@ -529,6 +536,15 @@ export class FxSystem {
             color,
           });
         }
+        // Directional hit arc when local player is struck
+        if (myId && e.victim === myId && e.dirX !== undefined && e.dirY !== undefined) {
+          this.hitArcs.push({
+            angle: Math.atan2(-e.dirY, -e.dirX),
+            age: 0,
+            life: 0.55,
+          });
+          if (this.hitArcs.length > 6) this.hitArcs.shift();
+        }
       } else if (e.t === 'special') {
         const life = e.kind === 'flare' ? 1.0 : e.kind === 'cloak' ? 1.2 : e.kind === 'overdrive' ? 0.75 : 0.4;
         this.list.push({ x: e.x, y: e.y, age: 0, life, kind: e.kind });
@@ -537,12 +553,16 @@ export class FxSystem {
     if (this.list.length > 280) this.list.splice(0, this.list.length - 280);
   }
 
-  update(dt: number, planes?: Plane[], clouds?: Cloud[]) {
-    // 0) Update ground craters
+  update(dt: number, planes?: Plane[], clouds?: Cloud[], worldTime = 0) {
+    // 0) Update ground craters & directional hit arcs
     for (let i = 0; i < this.craters.length; i++) {
       this.craters[i].age += dt;
     }
     this.craters = this.craters.filter((cr) => cr.age < cr.life);
+    for (let i = 0; i < this.hitArcs.length; i++) {
+      this.hitArcs[i].age += dt;
+    }
+    this.hitArcs = this.hitArcs.filter((ha) => ha.age < ha.life);
 
     // 1) Update active cloud wakes
     for (let i = 0; i < this.wakes.length; i++) {
@@ -664,11 +684,12 @@ export class FxSystem {
           }
         }
 
-        // Faint, thin aerodynamic wingtip vortex vapor streamers
+        // Faint, thin aerodynamic wingtip vortex vapor streamers (clouds OR high-G turns / boost)
+        const highG = Math.abs(p.bank ?? 0) > 0.52 || worldTime < p.dashUntil || worldTime < p.boostUntil;
         const moist = this.planeMoisture[p.id] ?? 0;
-        if (moist > 0) {
-          this.planeMoisture[p.id] = moist - dt;
-          const moistFrac = Math.min(1, moist / 0.45);
+        if (moist > 0 || (highG && dropSmoke)) {
+          if (moist > 0) this.planeMoisture[p.id] = moist - dt;
+          const moistFrac = moist > 0 ? Math.min(1, moist / 0.45) : 0.65;
 
           const span = st.radius * 0.85;
           const tipBack = st.radius * 0.2;
@@ -956,6 +977,24 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
   // 2D Ground: Patchwork crop fields, dirt roads, and military airstrip runway
   const terrain = getTerrain(w.config.map, arenaW, arenaH);
   drawGroundTerrain(canvas, terrain, visible, mapDef.palette, w.config.map);
+
+  // Animated Ocean Shimmering Wave Glints
+  if (w.config.map === 'ocean') {
+    const step = 160;
+    const minX = Math.max(40, Math.floor((cam.x - wvw / 2) / step) * step);
+    const maxX = Math.min(arenaW - 40, cam.x + wvw / 2 + step);
+    const minY = Math.max(40, Math.floor((cam.y - wvh / 2) / step) * step);
+    const maxY = Math.min(arenaH - 40, cam.y + wvh / 2 + step);
+    c.p.trail.setAlphaf(0.14);
+    for (let wx = minX; wx <= maxX; wx += step) {
+      for (let wy = minY; wy <= maxY; wy += step) {
+        const shift = Math.sin(time * 2.2 + wx * 0.01 + wy * 0.01) * 14;
+        const len = 14 + Math.cos(time * 1.7 + wy * 0.02) * 6;
+        canvas.drawLine(wx + shift, wy, wx + shift + len, wy, c.p.trail);
+      }
+    }
+    c.p.trail.setAlphaf(0.35);
+  }
 
   // Persistent scorched ground impact craters and splash waves
   drawGroundCraters(canvas, fx.craters, visible, c, w.config.map);
@@ -1269,6 +1308,29 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
       const thr = Math.max(0, Math.min(1, (p.speed - st.minSpeed) / (st.maxSpeed - st.minSpeed)));
       const isHit = w.time < (p.hitFlashUntil ?? 0);
       drawPlane(canvas, p.type, pose.x, pose.y, pose.angle, st.radius * ART_SCALE, planeColor(w, p, s.myId), thr, time, p.bank ?? 0, isHit);
+
+      // Per-flight muzzle flash when cannon just fired
+      if (p.fireCd > st.fireInterval * 0.65) {
+        const bs = bStyles[p.type];
+        const cosA = Math.cos(pose.angle);
+        const sinA = Math.sin(pose.angle);
+        const noseDist = st.radius * 1.45;
+        const isTwin = p.perk?.kind === 'twin_vulcan' && w.time < p.perk.until;
+        if (isTwin) {
+          const wingOff = st.radius * 0.68;
+          for (const sign of [-1, 1]) {
+            const mx = pose.x + cosA * (noseDist * 0.85) - sinA * wingOff * sign;
+            const my = pose.y + sinA * (noseDist * 0.85) + cosA * wingOff * sign;
+            canvas.drawCircle(mx, my, 6.5, bs.outer);
+            canvas.drawCircle(mx, my, 3.2, bs.white);
+          }
+        } else {
+          const mx = pose.x + cosA * noseDist;
+          const my = pose.y + sinA * noseDist;
+          canvas.drawCircle(mx, my, 7.5, bs.outer);
+          canvas.drawCircle(mx, my, 3.6, bs.white);
+        }
+      }
     }
     // Low-HP distress smoke & engine fire trails
     const bw = 40;
@@ -1593,6 +1655,22 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
     }
     canvas.drawCircle(mmX + pose.x * sx, mmY + pose.y * sy, p.id === s.myId ? 4.5 : 3.5, fillFor(planeColor(w, p, s.myId)));
   }
+
+  // Directional incoming hit indicators around screen center
+  for (const ha of fx.hitArcs) {
+    const alpha = Math.max(0, 1 - ha.age / ha.life);
+    const dist = Math.min(vw, vh) * 0.28;
+    const hx = vw / 2 + Math.cos(ha.angle) * dist;
+    const hy = vh / 2 + Math.sin(ha.angle) * dist;
+    c.p.lock.setAlphaf(alpha);
+    canvas.save();
+    canvas.translate(hx, hy);
+    canvas.rotate((ha.angle * 180) / Math.PI, 0, 0);
+    canvas.drawLine(-8, -12, 8, 0, c.p.lock);
+    canvas.drawLine(-8, 12, 8, 0, c.p.lock);
+    canvas.restore();
+  }
+  c.p.lock.setAlphaf(1);
 
   // Sky Force Low-Health Red Alert Vignette on screen border
   if (me && me.alive && me.hp < PLANES[me.type].hp * 0.35) {
