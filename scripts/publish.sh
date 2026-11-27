@@ -47,13 +47,19 @@ cp "$APK" "$STAGE/$ASSET"
 cp "$MANIFEST" "$STAGE/$MANIFEST"
 
 echo "==> publishing release $TAG to $REPO"
-gh release create "$TAG" \
-  "$STAGE/$ASSET" \
-  "$STAGE/$MANIFEST" \
-  --repo "$REPO" \
-  --title "AeroFighter $VERSION" \
-  --notes "Release $VERSION (versionCode $CODE)." \
-  --latest
+if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+  # The iOS workflow (.github/workflows/ios-release.yml) may have created this
+  # release first; just add the APK + manifest next to the IPA.
+  gh release upload "$TAG" "$STAGE/$ASSET" "$STAGE/$MANIFEST" --repo "$REPO" --clobber
+else
+  gh release create "$TAG" \
+    "$STAGE/$ASSET" \
+    "$STAGE/$MANIFEST" \
+    --repo "$REPO" \
+    --title "AeroFighter $VERSION" \
+    --notes "Release $VERSION (versionCode $CODE)." \
+    --latest
+fi
 
 echo "==> done: https://github.com/$REPO/releases/tag/$TAG"
 rm -rf "$STAGE"

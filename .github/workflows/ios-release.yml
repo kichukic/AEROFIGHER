@@ -1,4 +1,24 @@
-name: iOS Release Build & Ad Hoc Distribution
+name: iOS Free Sideload Build (AltStore / SideStore)
+
+# Builds AeroFighter for iOS on a GitHub-hosted macOS runner with NO paid Apple
+# Developer Program membership, and publishes the IPA to GitHub Releases.
+#
+# Outputs per release:
+#   AeroFighter.ipa / AeroFighter-<ver>.ipa
+#       Ad-hoc (pseudo) signed. AltStore / SideStore / Sideloadly re-sign it on
+#       install with the user's own free Apple ID. This is the IPA the
+#       altstore-source.json points at. Always produced.
+#   AeroFighter-<ver>-dev-signed.ipa
+#       Signed with a free Personal Team development certificate + 7-day
+#       provisioning profile. Only produced when the optional secrets below are
+#       set (see IOS_BUILD_GUIDE.md, "Optional: Personal Team signing").
+#
+# Optional repository secrets (all three needed for dev-signed IPA):
+#   IOS_DEV_P12_BASE64        base64 of the exported "Apple Development" cert (.p12)
+#   IOS_DEV_P12_PASSWORD      password of that .p12
+#   IOS_DEV_PROFILE_BASE64    base64 of the Personal Team .mobileprovision
+#
+# No Ad Hoc distribution, no itms-services OTA, no App Store Connect API key.
 
 on:
   push:
@@ -7,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (e.g. v1.0.5). Leave empty to use version from app.json'
+        description: 'Release Tag (e.g. v1.0.6). Leave empty to use version from app.json'
         required: false
         default: ''
       draft:
@@ -25,14 +45,19 @@ permissions:
   contents: write
 
 concurrency:
-  group: ios-release-${{ github.ref }}
+  group: ios-sideload-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-ios:
-    name: Build & Sign iOS IPA (Ad Hoc)
-    runs-on: macos-14
-    timeout-minutes: 60
+    name: Build iOS IPA for Free Sideloading
+    # macos-14 images were retired on 2026-11-02. Expo SDK 58 needs Xcode 26.4+,
+    # which only the macOS 26 image ships.
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    env:
+      MIN_XCODE: '26.4'
 
     steps:
       - name: 1. Checkout repository
@@ -43,19 +68,24 @@ jobs:
       - name: 2. Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Expo SDK 58 minimum is Node 22.13
+          node-version: 22
           cache: 'npm'
 
-      - name: 3. Select Xcode version
+      - name: 3. Select Xcode (>= 26.4)
         run: |
           echo "Available Xcode installations:"
-          ls -d /Applications/Xcode* || true
-          if [ -d "/Applications/Xcode_16.0.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
-          elif [ -d "/Applications/Xcode_15.4.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          ls -d /Applications/Xcode*.app || true
+          XCODE_APP=$(ls -d /Applications/Xcode_26.*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$XCODE_APP" ]; then
+            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
           fi
           xcodebuild -version
+          XV=$(xcodebuild -version | awk '/^Xcode/{print $2}')
+          if [ "$(printf '%s\n%s\n' "$MIN_XCODE" "$XV" | sort -V | head -1)" != "$MIN_XCODE" ]; then
+            echo "::error::Xcode $XV is older than $MIN_XCODE required by Expo SDK 58"
+            exit 1
+          fi
 
       - name: 4. Extract App Metadata
         id: meta
@@ -63,243 +93,226 @@ jobs:
           APP_VERSION=$(node -p "require('./app.json').expo.version")
           BUNDLE_ID=$(node -p "require('./app.json').expo.ios?.bundleIdentifier || 'com.aerofighter.game'")
           APP_NAME=$(node -p "require('./app.json').expo.name || 'AeroFighter'")
-          
-          # Resolve Release Tag
+
           INPUT_TAG="${{ github.event.inputs.release_tag }}"
           if [ -n "$INPUT_TAG" ]; then
             TAG="$INPUT_TAG"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
           else
             TAG="v${APP_VERSION}"
           fi
-          
-          echo "version=${APP_VERSION}" >> $GITHUB_OUTPUT
-          echo "bundle_id=${BUNDLE_ID}" >> $GITHUB_OUTPUT
-          echo "app_name=${APP_NAME}" >> $GITHUB_OUTPUT
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          
+
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "bundle_id=${BUNDLE_ID}" >> "$GITHUB_OUTPUT"
+          echo "app_name=${APP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "==> Target App: ${APP_NAME} (${BUNDLE_ID}) v${APP_VERSION} (Tag: ${TAG})"
 
-      - name: 5. Cache CocoaPods
+      - name: 5. Install npm dependencies
+        run: npm ci
+
+      - name: 6. Expo Prebuild for iOS
+        run: |
+          # Continuous Native Generation: ios/ is generated, never committed.
+          # Android is untouched (--platform ios only).
+          npx expo prebuild --platform ios --clean --no-install
+
+      - name: 7. Cache CocoaPods
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cocoapods
+            ~/.cocoapods/repos
+            ~/Library/Caches/CocoaPods
             ios/Pods
-          key: ${{ runner.os }}-pods-${{ hashFiles('package-lock.json') }}
+          key: ${{ runner.os }}-pods-${{ hashFiles('package-lock.json', 'app.json') }}
           restore-keys: |
             ${{ runner.os }}-pods-
 
-      - name: 6. Install npm dependencies
-        run: |
-          npm ci
-
-      - name: 7. Expo Prebuild for iOS (Generate Native Project)
-        run: |
-          # Continuous Native Generation (CNG): generates ios/ folder matching app.json
-          npx expo prebuild --platform ios --clean
-
       - name: 8. Install CocoaPods dependencies
-        run: |
-          cd ios
-          pod install --repo-update
-          cd ..
+        run: cd ios && pod install --repo-update
 
-      - name: 9. Configure Apple Signing Certificate & Keychain
+      - name: 9. Build iOS Release (unsigned)
         env:
-          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
-        run: |
-          if [ -z "$CERTIFICATE_BASE64" ] || [ -z "$KEYCHAIN_PASSWORD" ]; then
-            echo "::error::Missing required secret: IOS_CERTIFICATE_BASE64 or IOS_KEYCHAIN_PASSWORD"
-            exit 1
-          fi
-
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          CERT_PATH=$RUNNER_TEMP/distribution.p12
-
-          # Create ephemeral keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Decode and import p12 certificate
-          echo -n "$CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
-          security import "$CERT_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
-
-          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
-          echo "==> Keychain and certificate imported successfully"
-
-      - name: 10. Install Ad Hoc Provisioning Profile
-        env:
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-        run: |
-          if [ -z "$PROVISIONING_PROFILE_BASE64" ]; then
-            echo "::error::Missing required secret: IOS_PROVISIONING_PROFILE_BASE64"
-            exit 1
-          fi
-
-          PP_DIR=~/Library/MobileDevice/Provisioning\ Profiles
-          mkdir -p "$PP_DIR"
-
-          PP_PATH=$RUNNER_TEMP/adhoc.mobileprovision
-          echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o "$PP_PATH"
-
-          # Extract UUID and Name from provisioning profile
-          PROFILE_UUID=$(security cms -D -i "$PP_PATH" | plutil -extract UUID raw -)
-          PROFILE_NAME=$(security cms -D -i "$PP_PATH" | plutil -extract Name raw -)
-
-          if [ -z "$PROFILE_UUID" ]; then
-            echo "::error::Could not extract UUID from provisioning profile"
-            exit 1
-          fi
-
-          cp "$PP_PATH" "$PP_DIR/$PROFILE_UUID.mobileprovision"
-          echo "PROFILE_UUID=$PROFILE_UUID" >> $GITHUB_ENV
-          echo "PROFILE_NAME=$PROFILE_NAME" >> $GITHUB_ENV
-          echo "==> Installed Provisioning Profile: $PROFILE_NAME ($PROFILE_UUID)"
-
-      - name: 11. Generate ExportOptions.plist
-        env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          BUNDLE_ID: ${{ steps.meta.outputs.bundle_id }}
-        run: |
-          if [ -z "$TEAM_ID" ]; then
-            echo "::error::Missing required secret: APPLE_TEAM_ID"
-            exit 1
-          fi
-
-          mkdir -p build
-          cat > build/ExportOptions.plist <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>ad-hoc</string>
-              <key>teamID</key>
-              <string>${TEAM_ID}</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>provisioningProfiles</key>
-              <dict>
-                  <key>${BUNDLE_ID}</key>
-                  <string>${PROFILE_UUID}</string>
-              </dict>
-              <key>signingCertificate</key>
-              <string>Apple Distribution</string>
-              <key>compileBitcode</key>
-              <false/>
-              <key>destination</key>
-              <string>export</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-          </dict>
-          </plist>
-          EOF
-          echo "==> Generated build/ExportOptions.plist:"
-          cat build/ExportOptions.plist
-
-      - name: 12. Build and Archive iOS Project
-        env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           SCHEME: ${{ steps.meta.outputs.app_name }}
         run: |
-          mkdir -p build/archive
-          xcodebuild -workspace ios/${SCHEME}.xcworkspace \
+          set -o pipefail
+          mkdir -p build/DerivedData
+          xcodebuild -workspace "ios/${SCHEME}.xcworkspace" \
             -scheme "${SCHEME}" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "build/archive/${SCHEME}.xcarchive" \
-            PROVISIONING_PROFILE_SPECIFIER="${PROFILE_UUID}" \
-            DEVELOPMENT_TEAM="${TEAM_ID}" \
-            CODE_SIGN_STYLE="Manual" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN_PATH}" \
-            archive | xcbeautify || xcodebuild -workspace ios/${SCHEME}.xcworkspace \
-              -scheme "${SCHEME}" \
-              -configuration Release \
-              -destination 'generic/platform=iOS' \
-              -archivePath "build/archive/${SCHEME}.xcarchive" \
-              PROVISIONING_PROFILE_SPECIFIER="${PROFILE_UUID}" \
-              DEVELOPMENT_TEAM="${TEAM_ID}" \
-              CODE_SIGN_STYLE="Manual" \
-              CODE_SIGN_IDENTITY="Apple Distribution" \
-              OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN_PATH}" \
-              archive
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | tee build/xcodebuild.log | grep -E '^(\*\*|error:|warning: .*deprecated)' || true
+          test "${PIPESTATUS[0]}" = "0" || { tail -200 build/xcodebuild.log; exit 1; }
 
-      - name: 13. Export Signed IPA
+      - name: 10. Package AltStore / SideStore IPA (ad-hoc pseudo-signed)
         env:
           SCHEME: ${{ steps.meta.outputs.app_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          mkdir -p build/export
-          xcodebuild -exportArchive \
-            -archivePath "build/archive/${SCHEME}.xcarchive" \
-            -exportOptionsPlist build/ExportOptions.plist \
-            -exportPath build/export \
-            OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN_PATH}"
+          set -euo pipefail
+          APP_DIR="build/DerivedData/Build/Products/Release-iphoneos/${SCHEME}.app"
+          [ -d "$APP_DIR" ] || { echo "::error::Built .app not found at $APP_DIR"; exit 1; }
 
-      - name: 14. Stage Release Assets & Generate OTA Manifest
+          # Entitlements generated by prebuild from app.json (may be empty).
+          ENT="ios/${SCHEME}/${SCHEME}.entitlements"
+          if [ ! -f "$ENT" ]; then
+            ENT="build/empty.entitlements"
+            printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict/></plist>\n' > "$ENT"
+          fi
+
+          rm -rf build/ipa-altstore && mkdir -p build/ipa-altstore/Payload
+          cp -R "$APP_DIR" build/ipa-altstore/Payload/
+          APP="build/ipa-altstore/Payload/${SCHEME}.app"
+
+          # Ad-hoc signature ("-") embeds entitlements so AltStore/SideStore know
+          # what the app asks for; they replace this signature with the user's
+          # free Apple ID signature on install.
+          ./scripts/ios-sign-app.sh "$APP" "-" "$ENT"
+
+          mkdir -p release-assets
+          (cd build/ipa-altstore && zip -qry "../../release-assets/${SCHEME}-${VERSION}.ipa" Payload)
+          cp "release-assets/${SCHEME}-${VERSION}.ipa" "release-assets/${SCHEME}.ipa"
+
+          IPA="release-assets/${SCHEME}-${VERSION}.ipa"
+          echo "ipa_size=$(stat -f%z "$IPA")" >> "$GITHUB_ENV"
+          echo "ipa_sha=$(shasum -a 256 "$IPA" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "altstore_app=$APP" >> "$GITHUB_ENV"
+          echo "==> Packaged $IPA"
+
+      - name: 11. Optional — Personal Team development-signed IPA
+        id: devsign
         env:
+          SCHEME: ${{ steps.meta.outputs.app_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          P12_B64: ${{ secrets.IOS_DEV_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DEV_P12_PASSWORD }}
+          PROFILE_B64: ${{ secrets.IOS_DEV_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${P12_B64}" ] || [ -z "${PROFILE_B64}" ]; then
+            echo "::notice::IOS_DEV_P12_BASE64 / IOS_DEV_PROFILE_BASE64 not set — skipping Personal Team signing. The ad-hoc IPA is fine for AltStore/SideStore."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          WORK="$RUNNER_TEMP/devsign"; mkdir -p "$WORK"
+          echo "$P12_B64" | base64 --decode > "$WORK/cert.p12"
+          echo "$PROFILE_B64" | base64 --decode > "$WORK/profile.mobileprovision"
+          security cms -D -i "$WORK/profile.mobileprovision" > "$WORK/profile.plist"
+
+          # Expiry check: free Personal Team profiles last 7 days.
+          EXP=$(/usr/libexec/PlistBuddy -c "Print :ExpirationDate" "$WORK/profile.plist")
+          EXP_TS=$(date -j -f "%a %b %d %T %Z %Y" "$EXP" +%s 2>/dev/null || echo 0)
+          NOW_TS=$(date +%s)
+          if [ "$EXP_TS" -le "$NOW_TS" ]; then
+            echo "::warning::Provisioning profile expired on $EXP — refresh IOS_DEV_PROFILE_BASE64. Skipping dev-signed IPA."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "==> Profile valid until $EXP ($(( (EXP_TS-NOW_TS)/3600 )) h left)"
+
+          # Temporary keychain holding the free "Apple Development" identity.
+          KC="$RUNNER_TEMP/devsign.keychain-db"; KC_PW="$(uuidgen)"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          security import "$WORK/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          IDENTITY=$(security find-identity -v -p codesigning "$KC" | awk -F'"' '/Apple Development/{print $2; exit}')
+          [ -n "$IDENTITY" ] || { echo "::error::No 'Apple Development' identity in the .p12"; exit 1; }
+          echo "==> Signing identity: $IDENTITY"
+
+          # Entitlements come from the profile itself (exactly what Apple granted
+          # the free team), so codesign never asks for something not provisioned.
+          /usr/libexec/PlistBuddy -x -c "Print :Entitlements" "$WORK/profile.plist" > "$WORK/ent.plist"
+          APPID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$WORK/profile.plist")
+          PROFILE_BUNDLE="${APPID#*.}"   # strip TEAMID.
+
+          rm -rf build/ipa-dev && mkdir -p build/ipa-dev/Payload
+          cp -R "build/DerivedData/Build/Products/Release-iphoneos/${SCHEME}.app" build/ipa-dev/Payload/
+          APP="build/ipa-dev/Payload/${SCHEME}.app"
+          cp "$WORK/profile.mobileprovision" "$APP/embedded.mobileprovision"
+
+          # Free teams cannot use wildcard App IDs; if the profile was created for
+          # a different (unique) bundle ID, adopt it so the signature is valid.
+          if [ "$PROFILE_BUNDLE" != "*" ]; then
+            CUR=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist")
+            if [ "$CUR" != "$PROFILE_BUNDLE" ]; then
+              echo "::notice::Rewriting CFBundleIdentifier $CUR -> $PROFILE_BUNDLE to match the Personal Team profile"
+              /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $PROFILE_BUNDLE" "$APP/Info.plist"
+            fi
+          fi
+
+          ./scripts/ios-sign-app.sh "$APP" "$IDENTITY" "$WORK/ent.plist" "$KC"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          OUT="release-assets/${SCHEME}-${VERSION}-dev-signed.ipa"
+          (cd build/ipa-dev && zip -qry "../../$OUT" Payload)
+          DEVICES=$(/usr/libexec/PlistBuddy -c "Print :ProvisionedDevices" "$WORK/profile.plist" 2>/dev/null | grep -c -E '^\s+[0-9A-Fa-f-]{20,}' || true)
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "expires=$EXP" >> "$GITHUB_OUTPUT"
+          echo "devices=$DEVICES" >> "$GITHUB_OUTPUT"
+          echo "==> Packaged $OUT (valid on $DEVICES registered device(s) until $EXP)"
+
+          security delete-keychain "$KC" || true
+          rm -rf "$WORK"
+
+      - name: 12. Generate AltStore / SideStore source + release notes
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.meta.outputs.tag }}
           VERSION: ${{ steps.meta.outputs.version }}
           BUNDLE_ID: ${{ steps.meta.outputs.bundle_id }}
           APP_NAME: ${{ steps.meta.outputs.app_name }}
-          TAG: ${{ steps.meta.outputs.tag }}
+          DEV_SIGNED: ${{ steps.devsign.outputs.signed }}
+          DEV_EXPIRES: ${{ steps.devsign.outputs.expires }}
         run: |
-          mkdir -p release-assets
-          
-          # Find exported IPA file
-          EXPORTED_IPA=$(find build/export -name "*.ipa" | head -n 1)
-          if [ -z "$EXPORTED_IPA" ] || [ ! -f "$EXPORTED_IPA" ]; then
-            echo "::error::IPA export failed; no .ipa file found in build/export"
-            exit 1
+          set -euo pipefail
+          # Pre-existing repo copy lets the generator keep older versions listed.
+          ./scripts/generate-altstore-source.sh \
+            --repo "$REPO" --tag "$TAG" --version "$VERSION" \
+            --bundle-id "$BUNDLE_ID" --app-name "$APP_NAME" \
+            --size "$ipa_size" --app "$altstore_app" \
+            --previous altstore-source.json \
+            --out release-assets/altstore-source.json
+
+          SIZE_MB=$(( ipa_size / 1024 / 1024 ))
+          DEV_LINE=""
+          if [ "${DEV_SIGNED}" = "true" ]; then
+            DEV_LINE="- \`${APP_NAME}-${VERSION}-dev-signed.ipa\` — signed with a free Personal Team profile, installs only on the profile's registered devices, **expires ${DEV_EXPIRES}**."
           fi
 
-          FINAL_IPA_NAME="${APP_NAME}-${VERSION}.ipa"
-          cp "$EXPORTED_IPA" "release-assets/${FINAL_IPA_NAME}"
-          cp "$EXPORTED_IPA" "release-assets/${APP_NAME}.ipa"
-
-          # Generate manifest.plist and install.html
-          chmod +x ./scripts/generate-ota-manifest.sh
-          ./scripts/generate-ota-manifest.sh \
-            "${{ github.repository }}" \
-            "${TAG}" \
-            "${VERSION}" \
-            "${BUNDLE_ID}" \
-            "${APP_NAME}" \
-            "release-assets"
-
-          # Calculate SHA256 checksum and file size
-          IPA_SIZE=$(stat -f%z "release-assets/${FINAL_IPA_NAME}")
-          IPA_SHA=$(shasum -a 256 "release-assets/${FINAL_IPA_NAME}" | cut -d' ' -f1)
-
           cat > release-assets/RELEASE_NOTES.md <<MD
-          # ${APP_NAME} ${VERSION} (iOS Ad Hoc Distribution)
+          # ${APP_NAME} ${VERSION}
 
-          ### 📲 Installation Options:
+          Free iOS sideload build (AltStore / SideStore / Sideloadly). No paid Apple Developer account used.
 
-          1. **OTA Web Install (Safari on iPhone)**:
-             - Open the release page or \`install.html\` in Safari on your iPhone.
-             - Tap the installation link:
-               \`itms-services://?action=download-manifest&url=https://github.com/${{ github.repository }}/releases/download/${TAG}/manifest.plist\`
+          ### Files
+          - \`${APP_NAME}.ipa\` — for AltStore / SideStore / Sideloadly (they sign it with *your* free Apple ID on install).
+          ${DEV_LINE}
 
-          2. **Direct IPA Sideload**:
-             - Download \`${FINAL_IPA_NAME}\`
-             - Install via **Sideloadly**, **AltStore**, or **Apple Configurator**.
+          ### Install with AltStore / SideStore
+          Add this source: \`https://raw.githubusercontent.com/${REPO}/master/altstore-source.json\`
+          — or download \`${APP_NAME}.ipa\` and open it in AltStore/SideStore (My Apps → +).
 
-          ### 🔐 Package Verification:
-          - **Bundle ID**: \`${BUNDLE_ID}\`
-          - **File Size**: $(( IPA_SIZE / 1024 / 1024 )) MB (\`${IPA_SIZE}\` bytes)
-          - **SHA-256**: \`${IPA_SHA}\`
+          ### Free Apple ID limits (set by Apple)
+          - Apps must be refreshed every 7 days (AltStore/SideStore do this automatically).
+          - Max 3 sideloaded apps at a time, 10 new App IDs per 7 days.
+          - iOS 16+: enable Settings → Privacy & Security → Developer Mode.
 
-          > **Note for iOS 16+**: You must enable **Developer Mode** in *Settings > Privacy & Security > Developer Mode* to run Ad Hoc builds.
+          ### Verification
+          - Bundle ID: \`${BUNDLE_ID}\`
+          - Size: ${SIZE_MB} MB (${ipa_size} bytes)
+          - SHA-256 (${APP_NAME}-${VERSION}.ipa): \`${ipa_sha}\`
           MD
 
-      - name: 15. Create or Update GitHub Release
+      - name: 13. Create or Update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
@@ -308,50 +321,56 @@ jobs:
           DRAFT: ${{ github.event.inputs.draft || 'false' }}
           PRERELEASE: ${{ github.event.inputs.prerelease || 'false' }}
         run: |
-          FLAGS=()
-          if [ "$DRAFT" = "true" ]; then FLAGS+=("--draft"); fi
-          if [ "$PRERELEASE" = "true" ]; then FLAGS+=("--prerelease"); fi
-
-          FINAL_IPA_NAME="${APP_NAME}-${VERSION}.ipa"
+          set -euo pipefail
+          ASSETS=("release-assets/${APP_NAME}-${VERSION}.ipa" "release-assets/${APP_NAME}.ipa" "release-assets/altstore-source.json")
+          DEV="release-assets/${APP_NAME}-${VERSION}-dev-signed.ipa"
+          [ -f "$DEV" ] && ASSETS+=("$DEV")
 
           if gh release view "$TAG" >/dev/null 2>&1; then
+            # Release already exists (e.g. created by scripts/publish.sh with the
+            # Android APK) — only add/replace the iOS assets, keep the APK.
             echo "==> Release $TAG exists. Uploading iOS assets..."
-            gh release upload "$TAG" \
-              "release-assets/${FINAL_IPA_NAME}" \
-              "release-assets/${APP_NAME}.ipa" \
-              "release-assets/manifest.plist" \
-              "release-assets/install.html" \
-              --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
+            FLAGS=()
+            [ "$DRAFT" = "true" ] && FLAGS+=("--draft")
+            [ "$PRERELEASE" = "true" ] && FLAGS+=("--prerelease")
             echo "==> Creating new release $TAG..."
-            gh release create "$TAG" \
-              "release-assets/${FINAL_IPA_NAME}" \
-              "release-assets/${APP_NAME}.ipa" \
-              "release-assets/manifest.plist" \
-              "release-assets/install.html" \
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --target "$GITHUB_SHA" \
               --title "${APP_NAME} ${VERSION}" \
               --notes-file release-assets/RELEASE_NOTES.md \
               "${FLAGS[@]}"
           fi
 
-      - name: 16. Upload Workflow Artifacts
+      - name: 14. Update altstore-source.json on master
+        if: github.event.inputs.draft != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Tag builds run on a detached HEAD; commit on top of the latest master.
+          for attempt in 1 2 3; do
+            git fetch origin master
+            git checkout -B master origin/master
+            cp release-assets/altstore-source.json altstore-source.json
+            git add altstore-source.json
+            git diff --cached --quiet && { echo "Source unchanged"; exit 0; }
+            git commit -m "chore(altstore): update source for ${{ steps.meta.outputs.version }}"
+            git push origin master && exit 0
+            echo "Push rejected (attempt $attempt), retrying..."; sleep 5
+          done
+          echo "::warning::Could not push altstore-source.json; the copy attached to the release is still valid."
+
+      - name: 15. Upload Workflow Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-${{ steps.meta.outputs.version }}
+          name: ios-sideload-${{ steps.meta.outputs.version }}
           path: |
             release-assets/*.ipa
-            release-assets/manifest.plist
-            release-assets/install.html
+            release-assets/altstore-source.json
             release-assets/RELEASE_NOTES.md
+            build/xcodebuild.log
           if-no-files-found: warn
           retention-days: 14
-
-      - name: 17. Clean up Keychain and Provisioning Profile
-        if: always()
-        run: |
-          if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
-            security delete-keychain "$KEYCHAIN_PATH" || true
-          fi
-          rm -rf ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision || true
-          rm -rf build/

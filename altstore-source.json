@@ -1,0 +1,27 @@
+{
+  "name": "AeroFighter",
+  "identifier": "com.aerofighter.game.source",
+  "subtitle": "Arcade Air Combat Simulator",
+  "description": "Fast-paced top-down aerial combat game with real-time multiplayer, Sky Force Reloaded visuals, homing missiles, and arcade killstreaks.",
+  "iconURL": "https://raw.githubusercontent.com/kichukic/AEROFIGHER/master/assets/icon.png",
+  "website": "https://github.com/kichukic/AEROFIGHER",
+  "apps": [
+    {
+      "name": "AeroFighter",
+      "bundleIdentifier": "com.aerofighter.game",
+      "developerName": "kichukic",
+      "version": "1.0.5",
+      "versionDate": "2026-11-27T10:19:48Z",
+      "versionDescription": "Free sideloading release for AltStore, SideStore, and Sideloadly.",
+      "downloadURL": "https://github.com/kichukic/AEROFIGHER/releases/download/v1.0.5/AeroFighter.ipa",
+      "localizedDescription": "Fast-paced top-down aerial dogfights, breakable homing missiles, air-drop supply crates, and arcade killstreak perks.",
+      "iconURL": "https://raw.githubusercontent.com/kichukic/AEROFIGHER/master/assets/icon.png",
+      "tintColor": "00e5ff",
+      "size": 52428800,
+      "screenshotURLs": [
+        "https://raw.githubusercontent.com/kichukic/AEROFIGHER/master/assets/icon.png"
+      ]
+    }
+  ],
+  "news": []
+}
