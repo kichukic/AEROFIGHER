@@ -1,6 +1,6 @@
 export type PlaneType = 'interceptor' | 'fighter' | 'bomber' | 'stealth' | 'gunship';
 export type GameMode = 'ffa' | 'tdm' | 'ctf';
-export type PickupKind = 'repair' | 'shield' | 'missiles' | 'boost';
+export type PickupKind = 'repair' | 'shield' | 'missiles' | 'boost' | 'weapon';
 export type MapId = 'farmland' | 'ocean' | 'desert' | 'arctic' | 'canyon' | 'night' | 'mountain' | 'forest' | 'city';
 export type SpecialKind = 'dash' | 'flare' | 'flak' | 'cloak' | 'overdrive';
 export type Weapon = 'gun' | 'missile' | 'zone' | 'crash' | 'flak';
@@ -53,6 +53,8 @@ export interface Plane {
   perk?: { kind: AirDropPerk; until: number };
   /** Gunship OVERDRIVE special (independent of air-drop perks). */
   overdriveUntil?: number;
+  /** In-match stackable cannon upgrade level (1..4). Resets on death. */
+  weaponLevel?: number;
 }
 
 export type AirDropPerk = 'twin_vulcan' | 'energy_shield' | 'cluster_missile' | 'overdrive';

@@ -49,23 +49,48 @@ def saw(p):
     return 2.0 * ((p / (2 * math.pi)) % 1.0) - 1.0
 
 
-# 1) Standard Vulcan Gun (Fighter): crisp punch + snappy transient
-n = int(SR * 0.085)
-nz = noise_lp(n, 0.55)
-sw = sweep(n, 240, 80)
-write('shoot', [(nz[i] * 0.75 + sw[i] * 0.65) * env(i, n, 0.002, 2.8) for i in range(n)])
+# 1) 20mm M61 Vulcan Cannon (Fighter): realistic supersonic crack + chamber punch + bolt clack
+n = int(SR * 0.12)
+nz_hi = noise_lp(n, 0.85)
+nz_lo = noise_lp(n, 0.18)
+sw = sweep(n, 320, 52)
+samples_shoot = []
+for i in range(n):
+    t = i / SR
+    crack = nz_hi[i] * math.exp(-t * 95.0) * 1.4
+    thump = (sw[i] * 0.8 + nz_lo[i] * 0.9) * math.exp(-t * 34.0)
+    bolt = math.sin(2 * math.pi * 1650 * t) * math.exp(-max(0.0, t - 0.012) * 180.0) * (0.28 if t > 0.012 else 0.0)
+    tail = nz_lo[i] * math.exp(-t * 18.0) * 0.35
+    samples_shoot.append(math.tanh((crack + thump + bolt + tail) * 1.35))
+write('shoot', samples_shoot)
 
-# 2) Heavy Autocannon / 30mm Gatling (Bomber & Gunship): deep bass thump + mechanical bark
+# 2) 30mm GAU-8 / Heavy Autocannon (Bomber & Gunship): deep chest-thumping percussive boom + rotary bark
+n = int(SR * 0.16)
+nz_hi = noise_lp(n, 0.72)
+nz_lo = noise_lp(n, 0.12)
+sw = sweep(n, 175, 36)
+samples_heavy = []
+for i in range(n):
+    t = i / SR
+    blast = nz_hi[i] * math.exp(-t * 65.0) * 1.3
+    boom = (sw[i] * 1.15 + nz_lo[i] * 1.0) * math.exp(-t * 22.0)
+    breech = math.sin(2 * math.pi * 920 * t) * math.exp(-max(0.0, t - 0.016) * 140.0) * (0.25 if t > 0.016 else 0.0)
+    samples_heavy.append(math.tanh((blast + boom + breech) * 1.5))
+write('shoot_heavy', samples_heavy)
+
+# 3) High-Velocity 25mm Twin Sabot / Interceptor Cannon: sharp supersonic whip-crack + tight kinetic snap
 n = int(SR * 0.11)
-nz = noise_lp(n, 0.35)
-sw = sweep(n, 150, 48)
-write('shoot_heavy', [(nz[i] * 0.7 + sw[i] * 0.9 + sq(2 * math.pi * 65 * i / SR) * 0.25) * env(i, n, 0.003, 2.2) for i in range(n)])
-
-# 3) High-Tech Plasma / Railgun (Interceptor & Stealth): crisp sci-fi zap
-n = int(SR * 0.09)
-nz = noise_lp(n, 0.7)
-sw = sweep(n, 1450, 240, saw)
-write('shoot_laser', [(sw[i] * 0.65 + nz[i] * 0.35) * env(i, n, 0.002, 2.4) for i in range(n)])
+nz_hi = noise_lp(n, 0.92)
+nz_mid = noise_lp(n, 0.35)
+sw = sweep(n, 480, 75)
+samples_fast = []
+for i in range(n):
+    t = i / SR
+    whip = nz_hi[i] * math.exp(-t * 125.0) * 1.5
+    snap = (sw[i] * 0.75 + nz_mid[i] * 0.7) * math.exp(-t * 42.0)
+    ring = math.sin(2 * math.pi * 2200 * t) * math.exp(-t * 85.0) * 0.22
+    samples_fast.append(math.tanh((whip + snap + ring) * 1.3))
+write('shoot_laser', samples_fast)
 
 # 4) Armor Hit: metallic clank + low impact thud
 n = int(SR * 0.10)

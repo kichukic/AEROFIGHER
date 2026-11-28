@@ -393,3 +393,47 @@ describe('true homing missiles', () => {
     expect(groundExplode?.big).toBe(true);
   });
 });
+
+describe('weapon upgrades', () => {
+  test('weapon pickup levels up cannons 1..4 and fires multi-barrel streams', () => {
+    const w = createWorld(configFor('ffa', 'ocean'), two('fighter', 'fighter'));
+    park(w);
+    const a = w.planes[0];
+    expect(a.weaponLevel).toBe(1);
+
+    // Level 1 fires 1 bullet
+    a.fireCd = 0;
+    step(w, { a: go({ fire: true }) });
+    expect(w.bullets.length).toBe(1);
+
+    // Collect weapon pickup -> Lv 2 (2 bullets)
+    w.bullets = [];
+    w.pickups.push({ id: 901, kind: 'weapon', x: a.x, y: a.y });
+    step(w, {});
+    expect(a.weaponLevel).toBe(2);
+    a.fireCd = 0;
+    step(w, { a: go({ fire: true }) });
+    expect(w.bullets.length).toBe(2);
+
+    // Collect weapon pickup -> Lv 3 (3 bullets)
+    w.bullets = [];
+    w.pickups.push({ id: 902, kind: 'weapon', x: a.x, y: a.y });
+    step(w, {});
+    expect(a.weaponLevel).toBe(3);
+    a.fireCd = 0;
+    step(w, { a: go({ fire: true }) });
+    expect(w.bullets.length).toBe(3);
+
+    // Collect weapon pickup -> Lv 4 (4 bullets, capped at 4)
+    w.bullets = [];
+    w.pickups.push({ id: 903, kind: 'weapon', x: a.x, y: a.y });
+    step(w, {});
+    expect(a.weaponLevel).toBe(4);
+    w.pickups.push({ id: 904, kind: 'weapon', x: a.x, y: a.y });
+    step(w, {});
+    expect(a.weaponLevel).toBe(4);
+    a.fireCd = 0;
+    step(w, { a: go({ fire: true }) });
+    expect(w.bullets.length).toBe(4);
+  });
+});

@@ -58,6 +58,7 @@ export const FLAG_RADIUS = 42;
 export const FLAG_RETURN_TIME = 15;
 export const FLAG_BASE_INSET = 230;
 export const CARRIER_SPEED_MULT = 0.9;
+export const MAX_WEAPON_LEVEL = 4;
 
 export const DEFAULT_CONFIG: MatchConfig = configFor('ffa', 'farmland');
 
@@ -87,7 +88,7 @@ function newPlane(w: World, s: PlayerSlot): Plane {
     vx: 0, vy: 0, bank: 0, hitFlashUntil: 0,
     fireCd: 0, missileCd: 0, missiles: stats.missiles, specialCd: 0, shieldUntil: 0, boostUntil: 0,
     dashUntil: 0, flareUntil: 0, spawnProtectUntil: 0, outOfBoundsTime: 0, inCloud: false,
-    kills: 0, deaths: 0, caps: 0, streak: 0, lastKillTime: 0, multiKills: 0,
+    kills: 0, deaths: 0, caps: 0, streak: 0, lastKillTime: 0, multiKills: 0, weaponLevel: 1,
   };
 }
 
@@ -204,6 +205,7 @@ function spawnPlane(w: World, p: Plane): void {
   p.dashUntil = 0;
   p.flareUntil = 0;
   p.overdriveUntil = 0;
+  p.weaponLevel = 1;
   p.outOfBoundsTime = 0;
   p.spawnProtectUntil = w.time + SPAWN_PROTECTION;
 }
@@ -274,10 +276,14 @@ function damage(w: World, victim: Plane, amount: number, killerId: string | null
     }
   }
 
-  // Reset victim's streaks & perks
+  // Reset victim's streaks, perks & weapon upgrades; drop weapon upgrade pickup
   victim.streak = 0;
   victim.multiKills = 0;
   victim.perk = undefined;
+  victim.weaponLevel = 1;
+  if (killer && killer !== victim && w.pickups.length < MAX_PICKUPS + 3) {
+    w.pickups.push({ id: w.nextId++, kind: 'weapon', x: victim.x, y: victim.y });
+  }
 
   w.events.push({ t: 'kill', killer: killer && killer !== victim ? killer.id : null, victim: victim.id, weapon });
 }
@@ -443,46 +449,54 @@ function stepPlane(w: World, p: Plane, input: Input, dt: number): void {
   p.y = clamp(p.y, -ZONE_MARGIN, arenaH + ZONE_MARGIN);
   if (!p.alive) return;
 
-  // Guns
+  // Guns (with stackable in-match weaponLevel 1..4)
   p.fireCd -= dt;
   if (input.fire && p.fireCd <= 0) {
     const isTwin = p.perk?.kind === 'twin_vulcan' && w.time < p.perk.until;
     const overdrive = w.time < (p.overdriveUntil ?? 0) || (p.perk?.kind === 'overdrive' && w.time < p.perk.until);
-    p.fireCd = stats.fireInterval * (isTwin ? 0.65 : 1) * (overdrive ? OVERDRIVE_FIRE_MULT : 1);
+    const wpnLv = Math.max(1, Math.min(MAX_WEAPON_LEVEL, (p.weaponLevel ?? 1) + (isTwin ? 1 : 0)));
+    p.fireCd = stats.fireInterval * (isTwin ? 0.65 : 1) * (overdrive ? OVERDRIVE_FIRE_MULT : 1) * (wpnLv >= 3 ? 0.88 : 1);
     const nose = stats.radius + 4;
     const spread = (rnd(w) - 0.5) * 0.04;
-    const a = p.angle + spread;
-    if (isTwin) {
-      // Twin vulcan streams from both wingtips
-      const perpX = -Math.sin(p.angle);
-      const perpY = Math.cos(p.angle);
-      const offset = stats.radius * 0.65;
-      for (const sign of [-1, 1]) {
-        w.bullets.push({
-          id: w.nextId++,
-          owner: p.id,
-          team: p.team,
-          x: p.x + Math.cos(p.angle) * nose + perpX * offset * sign,
-          y: p.y + Math.sin(p.angle) * nose + perpY * offset * sign,
-          vx: Math.cos(a) * stats.bulletSpeed + Math.cos(p.angle) * p.speed,
-          vy: Math.sin(a) * stats.bulletSpeed + Math.sin(p.angle) * p.speed,
-          life: stats.bulletLife,
-          dmg: Math.round(stats.bulletDamage * 0.9),
-        });
-      }
-    } else {
+    const baseAngle = p.angle + spread;
+    const perpX = -Math.sin(p.angle);
+    const perpY = Math.cos(p.angle);
+    const dmgScale = wpnLv >= 4 ? 1.15 : isTwin ? 0.9 : 1;
+    const spdScale = wpnLv >= 4 ? 1.12 : 1;
+    const spawnShot = (latOff: number, angOff: number, dmgFactor = 1) => {
+      const a = baseAngle + angOff;
       const b: Bullet = {
         id: w.nextId++,
         owner: p.id,
         team: p.team,
-        x: p.x + Math.cos(p.angle) * nose,
-        y: p.y + Math.sin(p.angle) * nose,
-        vx: Math.cos(a) * stats.bulletSpeed + Math.cos(p.angle) * p.speed,
-        vy: Math.sin(a) * stats.bulletSpeed + Math.sin(p.angle) * p.speed,
+        x: p.x + Math.cos(p.angle) * nose + perpX * latOff,
+        y: p.y + Math.sin(p.angle) * nose + perpY * latOff,
+        vx: Math.cos(a) * stats.bulletSpeed * spdScale + Math.cos(p.angle) * p.speed,
+        vy: Math.sin(a) * stats.bulletSpeed * spdScale + Math.sin(p.angle) * p.speed,
         life: stats.bulletLife,
-        dmg: stats.bulletDamage,
+        dmg: Math.max(1, Math.round(stats.bulletDamage * dmgScale * dmgFactor)),
       };
       w.bullets.push(b);
+    };
+
+    if (wpnLv === 1) {
+      spawnShot(0, 0);
+    } else if (wpnLv === 2) {
+      const off = stats.radius * 0.58;
+      spawnShot(-off, 0, 0.85);
+      spawnShot(off, 0, 0.85);
+    } else if (wpnLv === 3) {
+      const off = stats.radius * 0.65;
+      spawnShot(0, 0, 0.85);
+      spawnShot(-off, -0.085, 0.72);
+      spawnShot(off, 0.085, 0.72);
+    } else {
+      const inner = stats.radius * 0.36;
+      const outer = stats.radius * 0.78;
+      spawnShot(-inner, 0, 0.75);
+      spawnShot(inner, 0, 0.75);
+      spawnShot(-outer, -0.105, 0.65);
+      spawnShot(outer, 0.105, 0.65);
     }
   }
 
@@ -739,7 +753,7 @@ function stepProjectiles(w: World, dt: number): void {
   w.missiles = keptM;
 }
 
-const PICKUP_KINDS: PickupKind[] = ['repair', 'shield', 'missiles', 'boost'];
+const PICKUP_KINDS: PickupKind[] = ['repair', 'shield', 'missiles', 'boost', 'weapon'];
 
 function stepPickups(w: World): void {
   if (w.time >= w.nextPickupAt) {
@@ -775,6 +789,19 @@ function stepPickups(w: World): void {
         case 'boost':
           p.boostUntil = w.time + BOOST_TIME;
           break;
+        case 'weapon': {
+          const prev = p.weaponLevel ?? 1;
+          p.weaponLevel = Math.min(MAX_WEAPON_LEVEL, prev + 1);
+          w.events.push({
+            t: 'accolade',
+            id: p.id,
+            title: p.weaponLevel > prev ? `CANNON LV ${p.weaponLevel}!` : 'MAX FIREPOWER!',
+            subtitle: p.weaponLevel >= MAX_WEAPON_LEVEL ? 'Quad supersonic barrage active' : 'Weapons upgraded',
+            color: '#ff6b1a',
+            sound: 'streak',
+          });
+          break;
+        }
       }
       w.events.push({ t: 'pickup', id: p.id, kind: pk.kind });
       return false;
@@ -824,6 +851,7 @@ function stepCrates(w: World, dt: number): void {
       if (dist2(c.x, c.y, p.x, p.y) <= r * r) {
         picked = true;
         p.perk = { kind: c.perk, until: w.time + 12 };
+        if (c.perk === 'twin_vulcan') p.weaponLevel = Math.min(MAX_WEAPON_LEVEL, (p.weaponLevel ?? 1) + 1);
         if (c.perk === 'energy_shield') p.shieldUntil = Math.max(p.shieldUntil, w.time + 12);
         if (c.perk === 'cluster_missile') p.missiles = Math.min(PLANES[p.type].missiles + 4, p.missiles + 4);
         if (c.perk === 'overdrive') p.boostUntil = Math.max(p.boostUntil, w.time + 10);

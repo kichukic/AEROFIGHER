@@ -103,6 +103,9 @@ export function Hud({ session, feed, accolade }: { session: GameSession; feed: K
             ) : null}
           </View>
           <View style={styles.row}>
+            <Text style={[styles.tag, { backgroundColor: (me.weaponLevel ?? 1) >= 4 ? '#ff6b1a' : '#ffd23f', color: '#04111d' }]}>
+              {(me.weaponLevel ?? 1) >= 4 ? 'WPN MAX' : `WPN LV${me.weaponLevel ?? 1}`}
+            </Text>
             {w.time < me.shieldUntil ? <Text style={[styles.tag, { backgroundColor: '#00e5ff', color: '#04111d' }]}>SHIELD</Text> : null}
             {w.time < me.boostUntil ? <Text style={[styles.tag, { backgroundColor: '#c77dff', color: '#04111d' }]}>BOOST</Text> : null}
             {me.perk && w.time < me.perk.until ? (

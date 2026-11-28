@@ -21,10 +21,10 @@ export const COLORS = {
   bullet: '#ffffff',
   bulletGlow: '#00e5ff',
   missile: '#ffffff',
-  pickup: { repair: '#00f5d4', shield: '#00e5ff', missiles: '#ffaa00', boost: '#c77dff' } as Record<PickupKind, string>,
+  pickup: { repair: '#00f5d4', shield: '#00e5ff', missiles: '#ffaa00', boost: '#c77dff', weapon: '#ff6b1a' } as Record<PickupKind, string>,
 };
 
-const PICKUP_LETTER: Record<PickupKind, string> = { repair: '+', shield: 'S', missiles: 'M', boost: 'B' };
+const PICKUP_LETTER: Record<PickupKind, string> = { repair: '+', shield: 'S', missiles: 'M', boost: 'B', weapon: 'W' };
 
 export function planeColor(w: World, p: Plane, myId: string): string {
   if (p.id === myId) return COLORS.me;
@@ -75,6 +75,8 @@ let cache: {
   missileBody: SkPath;
   missileNose: SkPath;
   missileFins: SkPath;
+  tracerHead: SkPath;
+  muzzleCone: SkPath;
   fill: Record<string, SkPaint>;
   outline: SkPaint;
   font: SkFont;
@@ -196,6 +198,10 @@ function getCache() {
     missileFins: Skia.Path.MakeFromSVGString(
       'M -4 -2 L -9.5 -6 L -11 -6 L -8.5 -2 Z M -4 2 L -9.5 6 L -11 6 L -8.5 2 Z M 2 -2 L -0.5 -4.2 L -2 -4.2 L -1.2 -2 Z M 2 2 L -0.5 4.2 L -2 4.2 L -1.2 2 Z',
     )!,
+    tracerHead: polyPath([[5.5, 0], [0.5, 1.35], [-6.5, 0.55], [-6.5, -0.55], [0.5, -1.35]]),
+    muzzleCone: Skia.Path.MakeFromSVGString(
+      'M 0 0 L 14 -3.2 L 8 -0.8 L 17 0 L 8 0.8 L 14 3.2 Z M 0 0 L 5 -6 L 2.5 -1.2 L 5 6 L 2.5 1.2 Z',
+    )!,
     fill: {},
     outline: paint('#1b1b2f', 0.12),
     font,
@@ -303,7 +309,7 @@ interface Fx {
   y: number;
   age: number;
   life: number;
-  kind: 'boom' | 'smallboom' | 'spark' | 'flare' | 'flak' | 'dash' | 'dmgText' | 'smokePuff' | 'fireEmber' | 'shockwave' | 'shrapnel' | 'cloak' | 'overdrive' | 'cloudVapor' | 'cloudMist' | 'cloudTrail' | 'groundShockwave' | 'groundFireball' | 'groundSmoke';
+  kind: 'boom' | 'smallboom' | 'spark' | 'flare' | 'flak' | 'dash' | 'dmgText' | 'smokePuff' | 'fireEmber' | 'shockwave' | 'shrapnel' | 'casing' | 'cloak' | 'overdrive' | 'cloudVapor' | 'cloudMist' | 'cloudTrail' | 'groundShockwave' | 'groundFireball' | 'groundSmoke';
   vx?: number;
   vy?: number;
   text?: string;
@@ -617,6 +623,25 @@ export class FxSystem {
       for (const p of planes) {
         if (!p.alive) continue;
         const st = PLANES[p.type];
+
+        // Eject spinning brass shell casings while firing
+        if (dropSmoke && p.fireCd > st.fireInterval * 0.55) {
+          const perpX = -Math.sin(p.angle);
+          const perpY = Math.cos(p.angle);
+          const side = Math.random() > 0.5 ? 1 : -1;
+          const ejectSpd = 55 + Math.random() * 40;
+          this.list.push({
+            x: p.x + Math.cos(p.angle) * (st.radius * 0.25) + perpX * side * 6,
+            y: p.y + Math.sin(p.angle) * (st.radius * 0.25) + perpY * side * 6,
+            vx: perpX * side * ejectSpd - Math.cos(p.angle) * 20,
+            vy: perpY * side * ejectSpd - Math.sin(p.angle) * 20,
+            age: 0,
+            life: 0.38 + Math.random() * 0.15,
+            kind: 'casing',
+            angle: Math.random() * Math.PI * 2,
+            vAngle: (Math.random() - 0.5) * 28,
+          });
+        }
 
         // Low-HP distress smoke trails
         const frac = p.hp / st.hp;
@@ -1093,39 +1118,37 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
   const bStyles = getBulletStyles();
   const mStyles = getMissileStyles();
 
-  // Bullets: Per-flight glowing plasma/tracer/railgun ordnance
+  // Bullets: Realistic supersonic ballistic tracer rounds per aircraft
   for (const b of w.bullets) {
     const bx = b.x + b.vx * ex;
     const by = b.y + b.vy * ex;
-    if (!visible(bx, by, 30)) continue;
-    const bSpeed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-    const bDirX = bSpeed > 0 ? b.vx / bSpeed : 0;
+    if (!visible(bx, by, 40)) continue;
+    const bAngle = Math.atan2(b.vy, b.vx);
+    const bSpeed = Math.hypot(b.vx, b.vy);
+    const bDirX = bSpeed > 0 ? b.vx / bSpeed : 1;
     const bDirY = bSpeed > 0 ? b.vy / bSpeed : 0;
     const bs = b.flak ? bStyles.flak : bStyles[ownerTypes[b.owner] ?? 'fighter'];
-    const r = bs.radius;
+    const sc = bs.radius / 3.6;
 
-    // Outer expanding glow halo
-    canvas.drawCircle(bx, by, r * 1.75, bs.outer);
+    // Long fading supersonic tracer wake
+    const streakLen = bs.tailLen * 1.9;
+    bs.trail.setAlphaf(0.24);
+    canvas.drawLine(bx - bDirX * streakLen, by - bDirY * streakLen, bx, by, bs.trail);
+    bs.trail.setAlphaf(0.45);
+    canvas.drawLine(bx - bDirX * (streakLen * 0.48), by - bDirY * (streakLen * 0.48), bx, by, bs.flame);
 
-    // Trailing ionized stream: 4 fading puffs behind the bolt
-    for (let ti = 1; ti <= 4; ti++) {
-      const tx = bx - bDirX * ti * (bs.tailLen * 0.45);
-      const ty = by - bDirY * ti * (bs.tailLen * 0.45);
-      bs.trail.setAlphaf(Math.max(0, 0.28 - ti * 0.065));
-      canvas.drawCircle(tx, ty, r * (0.92 - ti * 0.16), bs.trail);
-    }
+    // Outer radiant heat halo around the round
+    canvas.drawCircle(bx, by, bs.radius * 1.45, bs.outer);
 
-    // Mid flame teardrop body
-    const tailX = bx - bDirX * bs.tailLen;
-    const tailY = by - bDirY * bs.tailLen;
-    canvas.drawLine(tailX, tailY, bx + bDirX * 2, by + bDirY * 2, bs.flame);
-    canvas.drawCircle(bx, by, r, bs.flame);
-
-    // Inner hot core
-    canvas.drawCircle(bx, by, r * 0.68, bs.hot);
-    canvas.drawCircle(bx, by, r * 0.44, bs.core);
-    // White-hot tip
-    canvas.drawCircle(bx + bDirX * 1.5, by + bDirY * 1.5, r * 0.28, bs.white);
+    // Sleek pointed ogive projectile + incandescent core + white-hot tip
+    canvas.save();
+    canvas.translate(bx, by);
+    canvas.rotate((bAngle * 180) / Math.PI, 0, 0);
+    canvas.scale(sc, sc);
+    canvas.drawPath(c.tracerHead, bs.hot);
+    canvas.drawOval(Skia.XYWHRect(-2.5, -0.85, 6.5, 1.7), bs.core);
+    canvas.drawCircle(3.2, 0, 0.95, bs.white);
+    canvas.restore();
   }
 
   // Missiles: Per-flight tactical guided ordnance with sleek airframe, canards, fins & thruster cone
@@ -1309,26 +1332,45 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
       const isHit = w.time < (p.hitFlashUntil ?? 0);
       drawPlane(canvas, p.type, pose.x, pose.y, pose.angle, st.radius * ART_SCALE, planeColor(w, p, s.myId), thr, time, p.bank ?? 0, isHit);
 
-      // Per-flight muzzle flash when cannon just fired
-      if (p.fireCd > st.fireInterval * 0.65) {
+      // Realistic directional muzzle blast at active gun ports when firing
+      if (p.fireCd > st.fireInterval * 0.62) {
         const bs = bStyles[p.type];
         const cosA = Math.cos(pose.angle);
         const sinA = Math.sin(pose.angle);
-        const noseDist = st.radius * 1.45;
+        const perpX = -sinA;
+        const perpY = cosA;
+        const noseDist = st.radius * 1.48;
         const isTwin = p.perk?.kind === 'twin_vulcan' && w.time < p.perk.until;
-        if (isTwin) {
-          const wingOff = st.radius * 0.68;
-          for (const sign of [-1, 1]) {
-            const mx = pose.x + cosA * (noseDist * 0.85) - sinA * wingOff * sign;
-            const my = pose.y + sinA * (noseDist * 0.85) + cosA * wingOff * sign;
-            canvas.drawCircle(mx, my, 6.5, bs.outer);
-            canvas.drawCircle(mx, my, 3.2, bs.white);
-          }
+        const wpnLv = Math.max(1, Math.min(4, (p.weaponLevel ?? 1) + (isTwin ? 1 : 0)));
+        const drawBlast = (mx: number, my: number, scaleM = 1) => {
+          canvas.save();
+          canvas.translate(mx, my);
+          canvas.rotate((pose.angle * 180) / Math.PI, 0, 0);
+          canvas.scale(scaleM, scaleM);
+          canvas.drawCircle(2, 0, 7, bs.outer);
+          canvas.drawPath(c.muzzleCone, bs.hot);
+          canvas.drawOval(Skia.XYWHRect(0, -1.6, 8, 3.2), bs.white);
+          canvas.restore();
+        };
+
+        if (wpnLv === 1) {
+          drawBlast(pose.x + cosA * noseDist, pose.y + sinA * noseDist, 1.0);
+        } else if (wpnLv === 2) {
+          const off = st.radius * 0.58;
+          drawBlast(pose.x + cosA * (noseDist * 0.85) - perpX * off, pose.y + sinA * (noseDist * 0.85) - perpY * off, 0.9);
+          drawBlast(pose.x + cosA * (noseDist * 0.85) + perpX * off, pose.y + sinA * (noseDist * 0.85) + perpY * off, 0.9);
+        } else if (wpnLv === 3) {
+          const off = st.radius * 0.65;
+          drawBlast(pose.x + cosA * noseDist, pose.y + sinA * noseDist, 1.05);
+          drawBlast(pose.x + cosA * (noseDist * 0.8) - perpX * off, pose.y + sinA * (noseDist * 0.8) - perpY * off, 0.85);
+          drawBlast(pose.x + cosA * (noseDist * 0.8) + perpX * off, pose.y + sinA * (noseDist * 0.8) + perpY * off, 0.85);
         } else {
-          const mx = pose.x + cosA * noseDist;
-          const my = pose.y + sinA * noseDist;
-          canvas.drawCircle(mx, my, 7.5, bs.outer);
-          canvas.drawCircle(mx, my, 3.6, bs.white);
+          const inner = st.radius * 0.36;
+          const outer = st.radius * 0.78;
+          drawBlast(pose.x + cosA * noseDist - perpX * inner, pose.y + sinA * noseDist - perpY * inner, 0.95);
+          drawBlast(pose.x + cosA * noseDist + perpX * inner, pose.y + sinA * noseDist + perpY * inner, 0.95);
+          drawBlast(pose.x + cosA * (noseDist * 0.78) - perpX * outer, pose.y + sinA * (noseDist * 0.78) - perpY * outer, 0.85);
+          drawBlast(pose.x + cosA * (noseDist * 0.78) + perpX * outer, pose.y + sinA * (noseDist * 0.78) + perpY * outer, 0.85);
         }
       }
     }
@@ -1501,6 +1543,15 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
       // Fiery glowing tip
       c.p.spark.setAlphaf(alpha * 0.9);
       canvas.drawCircle(len * 0.7, 0, len * 0.45, c.p.spark);
+      canvas.restore();
+    } else if (f.kind === 'casing') {
+      const alpha = Math.max(0, 1 - t);
+      const casingPaint = fillFor('#fbbf24');
+      casingPaint.setAlphaf(alpha * 0.9);
+      canvas.save();
+      canvas.translate(f.x, f.y);
+      canvas.rotate(((f.angle ?? 0) * 180) / Math.PI, 0, 0);
+      canvas.drawRect(Skia.XYWHRect(-2.4, -0.9, 4.8, 1.8), casingPaint);
       canvas.restore();
     } else if (f.kind === 'spark') {
       const alpha = Math.max(0, 1 - t);
