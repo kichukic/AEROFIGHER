@@ -24,8 +24,6 @@ export const COLORS = {
   pickup: { repair: '#00f5d4', shield: '#00e5ff', missiles: '#ffaa00', boost: '#c77dff', weapon: '#ff6b1a' } as Record<PickupKind, string>,
 };
 
-const PICKUP_LETTER: Record<PickupKind, string> = { repair: '+', shield: 'S', missiles: 'M', boost: 'B', weapon: 'W' };
-
 export function planeColor(w: World, p: Plane, myId: string): string {
   if (p.id === myId) return COLORS.me;
   if (isTeamMode(w.config.mode)) return COLORS.team[p.team] ?? COLORS.team[1];
@@ -77,6 +75,12 @@ let cache: {
   missileFins: SkPath;
   tracerHead: SkPath;
   muzzleCone: SkPath;
+  pickupHex: SkPath;
+  iconRepair: SkPath;
+  iconShield: SkPath;
+  iconMissiles: SkPath;
+  iconBoost: SkPath;
+  iconWeapon: SkPath;
   fill: Record<string, SkPaint>;
   outline: SkPaint;
   font: SkFont;
@@ -201,6 +205,25 @@ function getCache() {
     tracerHead: polyPath([[5.5, 0], [0.5, 1.35], [-6.5, 0.55], [-6.5, -0.55], [0.5, -1.35]]),
     muzzleCone: Skia.Path.MakeFromSVGString(
       'M 0 0 L 14 -3.2 L 8 -0.8 L 17 0 L 8 0.8 L 14 3.2 Z M 0 0 L 5 -6 L 2.5 -1.2 L 5 6 L 2.5 1.2 Z',
+    )!,
+    pickupHex: polyPath([[20, 0], [10, 17.3], [-10, 17.3], [-20, 0], [-10, -17.3], [10, -17.3]]),
+    // Medical cross (+)
+    iconRepair: Skia.Path.MakeFromSVGString(
+      'M -3.2 -9.5 L 3.2 -9.5 L 3.2 -3.2 L 9.5 -3.2 L 9.5 3.2 L 3.2 3.2 L 3.2 9.5 L -3.2 9.5 L -3.2 3.2 L -9.5 3.2 L -9.5 -3.2 L -3.2 -3.2 Z',
+    )!,
+    // Tactical energy shield crest
+    iconShield: polyPath([[0, -10.5], [9, -6.5], [8, 3], [0, 10.5], [-8, 3], [-9, -6.5]]),
+    // Twin angled rockets
+    iconMissiles: Skia.Path.MakeFromSVGString(
+      'M -3 -10 L 0.5 -4 L -1.2 -4 L -1.2 7 L -4.8 7 L -4.8 -4 L -6.5 -4 Z M 4 -7 L 7.5 -1 L 5.8 -1 L 5.8 10 L 2.2 10 L 2.2 -1 L 0.5 -1 Z',
+    )!,
+    // High-speed twin afterburner chevrons / bolt
+    iconBoost: Skia.Path.MakeFromSVGString(
+      'M 2 -11 L -6 1 L -0.5 1 L -3 11 L 7 -1.5 L 1.2 -1.5 Z',
+    )!,
+    // Triple-barrel cannon / starburst upgrade emblem
+    iconWeapon: Skia.Path.MakeFromSVGString(
+      'M 0 -11 L 2.6 -3.5 L 10.5 -3.5 L 4.2 1.2 L 6.5 9.5 L 0 4.8 L -6.5 9.5 L -4.2 1.2 L -10.5 -3.5 L -2.6 -3.5 Z',
     )!,
     fill: {},
     outline: paint('#1b1b2f', 0.12),
@@ -1064,17 +1087,58 @@ export function drawFrame(canvas: SkCanvas, s: GameSession, fx: FxSystem, cam: C
     }
   }
 
-  // Pickups (Sky Force Golden Star / Medal Collectibles)
+  // Pickups (Distinct glowing Sky Force hexagonal tactical pods with unique vector icons)
   for (const k of w.pickups) {
-    if (!visible(k.x, k.y, 40)) continue;
-    const pulse = 1 + Math.sin(time * 6 + k.id) * 0.12;
-    const r = 18 * pulse;
-    canvas.drawCircle(k.x, k.y, r + 4, fillFor(COLORS.pickup[k.kind]));
-    canvas.drawCircle(k.x, k.y, r, c.p.starGold);
-    canvas.drawCircle(k.x, k.y, r * 0.45, c.p.starCore);
-    const letter = PICKUP_LETTER[k.kind];
-    const tw = c.font.measureText(letter).width;
-    canvas.drawText(letter, k.x - tw / 2, k.y + 5, c.p.textShadow, c.font);
+    if (!visible(k.x, k.y, 48)) continue;
+    const col = COLORS.pickup[k.kind];
+    const pulse = 1 + Math.sin(time * 5.5 + k.id) * 0.08;
+    const bobY = Math.sin(time * 4 + k.id * 1.7) * 3;
+    const py = k.y + bobY;
+    const pCol = fillFor(col);
+
+    // 1) Soft ground shadow + expanding radar pulse ring
+    canvas.drawCircle(k.x + 4, k.y + 8, 17 * pulse, c.p.shadow);
+    const ringPhase = (time * 0.9 + k.id * 0.37) % 1;
+    pCol.setAlphaf((1 - ringPhase) * 0.35);
+    canvas.drawCircle(k.x, py, 16 + ringPhase * 18, pCol);
+
+    // 2) Outer radiant glow aura
+    pCol.setAlphaf(0.24);
+    canvas.drawCircle(k.x, py, 24 * pulse, pCol);
+    pCol.setAlphaf(1);
+
+    // 3) Rotating hexagonal pod frame + dark tactical core
+    canvas.save();
+    canvas.translate(k.x, py);
+    canvas.scale(pulse, pulse);
+    canvas.save();
+    canvas.rotate(((time * 35 + k.id * 25) % 360), 0, 0);
+    canvas.drawPath(c.pickupHex, pCol);
+    canvas.scale(0.82, 0.82);
+    canvas.drawPath(c.pickupHex, c.p.miniBg);
+    canvas.restore();
+
+    // 4) Orbiting energy pips
+    for (let oi = 0; oi < 2; oi++) {
+      const oa = time * 3.8 + oi * Math.PI + k.id;
+      canvas.drawCircle(Math.cos(oa) * 21, Math.sin(oa) * 21, 2.2, c.p.spark);
+    }
+
+    // 5) Unique vector emblem per bonus type
+    const iconPath =
+      k.kind === 'repair'
+        ? c.iconRepair
+        : k.kind === 'shield'
+          ? c.iconShield
+          : k.kind === 'missiles'
+            ? c.iconMissiles
+            : k.kind === 'boost'
+              ? c.iconBoost
+              : c.iconWeapon;
+    canvas.drawPath(iconPath, pCol);
+    canvas.scale(0.65, 0.65);
+    canvas.drawPath(iconPath, c.p.text);
+    canvas.restore();
   }
 
   // Air-Drop Supply Crates
